@@ -29,7 +29,7 @@ struct MainView: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
         } detail: {
-            if store.destination == .calendar { CalendarView() } else { ReminderListView(destination: store.destination) }
+            ReminderListView(destination: store.destination)
         }
         .searchable(text: $store.search, placement: .toolbar, prompt: "Search")
         .overlay(alignment: .bottom) { BannerView() }

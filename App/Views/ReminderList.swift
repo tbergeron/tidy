@@ -71,8 +71,8 @@ struct ReminderListView: View {
             store.editingID = store.selection.first; return .handled
         }
         .onKeyPress(.escape) {
-            guard store.editingID != nil else { return .ignored }
-            store.editingID = nil; return .handled
+            guard let cancel = store.cancelOpenCard else { return .ignored }
+            cancel(); return .handled   // same as Esc inside the card: revert and close
         }
         .onChange(of: store.selection) { _, new in
             if !new.isEmpty { store.composeFinisher?() }   // clicking another reminder closes (saves) the new one

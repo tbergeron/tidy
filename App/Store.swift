@@ -9,7 +9,6 @@ final class Store {
     let backend = Backend()
 
     var auth = EKEventStore.authorizationStatus(for: .reminder)
-    var eventAuth = EKEventStore.authorizationStatus(for: .event)
     var snap = Snapshot() { didSet { updateBadge() } }
     var loaded = false
     var clock = Clock.current { didSet { updateBadge() } }
@@ -44,6 +43,7 @@ final class Store {
     var pendingCrossMove: (ids: [String], listID: String)?
     var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere
     @ObservationIgnored var commitOpenCard: (() -> Void)?
+    @ObservationIgnored var cancelOpenCard: (() -> Void)?
 
     private(set) var pendingDeletes: [String: Date] = [:] { didSet { updateBadge() } }
     private(set) var justCompleted: Set<String> = []
@@ -71,11 +71,7 @@ final class Store {
     var badgeMode = BadgeMode(rawValue: UserDefaults.standard.string(forKey: "badgeMode") ?? "") ?? .overdueAndToday {
         didSet { UserDefaults.standard.set(badgeMode.rawValue, forKey: "badgeMode"); updateBadge() }
     }
-    var calendarAnchor = Date()
-    /// Event calendars hidden from the Calendar view (app-local).
-    var hiddenEventCalendars = Set(UserDefaults.standard.stringArray(forKey: "hiddenEventCalendars") ?? []) {
-        didSet { UserDefaults.standard.set(Array(hiddenEventCalendars), forKey: "hiddenEventCalendars") }
-    }
+
 
     struct Draft: Equatable { var listID: String?; var due: DateComponents?; var text = "" }
 
@@ -117,12 +113,6 @@ final class Store {
         if auth == .fullAccess { await reload() }
     }
 
-    func requestEventAccess() async {
-        do { _ = try await backend.requestEventAccess() } catch { fail(error) }
-        eventAuth = EKEventStore.authorizationStatus(for: .event)
-        scheduleReload()
-    }
-
     func scheduleReload(delay: Double = 0.3) {
         reloadTask?.cancel()
         reloadTask = Task {
@@ -136,7 +126,7 @@ final class Store {
         guard auth == .fullAccess else { return }
         let since = clock.cal.date(byAdding: .day, value: -completedWindowDays, to: clock.today) ?? .distantPast
         do {
-            snap = try await backend.load(completedSince: since, sectionsFor: viewedListID, events: eventRange,
+            snap = try await backend.load(completedSince: since, sectionsFor: viewedListID,
                                           useBridge: bridgeEnabled)
             loaded = true
             switch destination {   // the viewed list/group was deleted elsewhere
@@ -189,28 +179,6 @@ final class Store {
     // MARK: Derived data
 
     var viewedListID: String? { if case .list(let id) = destination { id } else { nil } }
-    var eventRange: DateInterval? {
-        guard eventAuth == .fullAccess else { return nil }
-        let anchor = clock.cal.startOfDay(for: calendarAnchor)
-        let start = clock.cal.date(byAdding: .day, value: -45, to: anchor) ?? anchor
-        return DateInterval(start: start, end: clock.cal.date(byAdding: .day, value: 75, to: anchor) ?? anchor)
-    }
-
-    /// Calendar: reminders due on `day` (overdue ones stay on their past day, drawn red).
-    func remindersOn(_ day: Date) -> [Reminder] {
-        let d = clock.cal.startOfDay(for: day)
-        let showDone = showCompleted.contains("smart")
-        return live.filter { r in
-            (!r.isCompleted || showDone || justCompleted.contains(r.id)) && r.due.flatMap { Due.day($0, clock: clock) } == d
-        }
-        .sorted { ($0.due.flatMap { Due.date($0, clock: clock) } ?? d, $0.id) < ($1.due.flatMap { Due.date($0, clock: clock) } ?? d, $1.id) }
-    }
-
-    func eventsOn(_ day: Date) -> [CalEvent] {
-        let s = clock.cal.startOfDay(for: day)
-        let e = clock.cal.date(byAdding: .day, value: 1, to: s) ?? s
-        return snap.events.filter { $0.start < e && $0.end > s && !hiddenEventCalendars.contains($0.calendarID) }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
-    }
     var bridgeReadable: Bool { bridgeEnabled && snap.bridge.readOK }
 
     func list(_ id: String) -> RList? { snap.lists.first { $0.id == id } }
@@ -278,7 +246,7 @@ final class Store {
         case .list(let id): return open.filter { $0.listID == id }.count
         case .group(let id): return open.filter { list($0.listID)?.groupID == id }.count
         case .tag(let t): return open.filter { $0.extras?.tags.contains { $0.caseInsensitiveCompare(t) == .orderedSame } == true }.count
-        case .completed, .calendar: return nil
+        case .completed: return nil
         }
     }
 
@@ -310,7 +278,6 @@ final class Store {
         case .completed: "Completed"
         case .assigned: "Assigned to Me"
         case .urgent: "Urgent"
-        case .calendar: "Calendar"
         case .list(let id): list(id)?.title ?? ""
         case .group(let id): snap.groups.first { $0.id == id }?.name ?? ""
         case .tag(let t): "#" + t
@@ -336,7 +303,6 @@ final class Store {
             case .urgent: return visibleCompletion && r.extras?.urgent == true
             case .assigned: return visibleCompletion && isAssignedToMe(r)
             case .completed: return r.isCompleted
-            case .calendar: return r.due != nil && visibleCompletion
             case .list(let id): return r.listID == id && visibleCompletion
             case .group(let id): return list(r.listID)?.groupID == id && visibleCompletion
             case .tag(let t): return visibleCompletion && r.extras?.tags.contains { $0.caseInsensitiveCompare(t) == .orderedSame } == true
@@ -403,7 +369,7 @@ final class Store {
                 if !done.isEmpty { out.append(RowSection(id: "completed-\(id)", title: "Completed", kind: .completed, rows: done.map { Row(reminder: $0, depth: 0) })) }
             }
             return out
-        case .all, .flagged, .urgent, .assigned, .group, .tag, .calendar:
+        case .all, .flagged, .urgent, .assigned, .group, .tag:
             let byList = Dictionary(grouping: rs, by: \.listID)
             return orderedListIDs.compactMap { lid in
                 guard let items = byList[lid], !items.isEmpty, let l = list(lid) else { return nil }
@@ -670,7 +636,7 @@ final class Store {
     /// New reminders can only be created where they'll stay visible and writable.
     var canCreate: Bool {
         switch destination {
-        case .completed, .calendar, .flagged, .urgent, .assigned, .tag: return false
+        case .completed, .flagged, .urgent, .assigned, .tag: return false
         default:
             let t = newReminderTarget(destination)
             return list(t.listID ?? snap.defaultListID ?? "")?.readOnly != true
@@ -739,16 +705,12 @@ final class Store {
                listID: list(o.listID) != nil ? o.listID : nil, undo: um)
     }
 
-    var showCompletedApplies: Bool {
-        if case .list = destination { return true }
-        return destination == .calendar
-    }
+    var showCompletedApplies: Bool { if case .list = destination { true } else { false } }
 
     func toggleShowCompleted() {
         let key: String
         switch destination {
         case .list(let id): key = id
-        case .calendar: key = "smart"
         default: return
         }
         if showCompleted.contains(key) { showCompleted.remove(key) } else { showCompleted.insert(key) }

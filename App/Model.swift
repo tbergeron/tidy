@@ -107,24 +107,6 @@ struct RGBA: Hashable, Sendable {
     var r: Double, g: Double, b: Double, a: Double = 1
 }
 
-struct EventCalendar: Identifiable, Hashable, Sendable {
-    let id: String
-    var title: String
-    var color: RGBA
-    var account: String
-}
-
-struct CalEvent: Identifiable, Hashable, Sendable {
-    let id: String
-    var title: String
-    var start: Date
-    var end: Date
-    var isAllDay: Bool
-    var calendarID: String
-    var calendarTitle: String
-    var color: RGBA
-}
-
 struct BridgeStatus: Hashable, Sendable {
     var loaded = false
     var readOK = false
@@ -139,8 +121,6 @@ struct Snapshot: Sendable {
     var defaultListID: String?
     var sections: [String: [RSection]] = [:]   // listID → ordered sections (viewed list only)
     var sectionOf: [String: String] = [:]      // reminderID → sectionID (viewed list only)
-    var events: [CalEvent] = []
-    var eventCalendars: [EventCalendar] = []
     var completedSince: Date = .distantPast
     var bridge = BridgeStatus()
 }
@@ -164,7 +144,7 @@ struct ReminderEdit: Sendable {
 
 /// Sidebar / navigation target.
 enum Destination: Hashable, Codable, Sendable {
-    case today, scheduled, all, flagged, completed, assigned, urgent, calendar
+    case today, scheduled, all, flagged, completed, assigned, urgent
     case list(String), group(String), tag(String)
 }
 

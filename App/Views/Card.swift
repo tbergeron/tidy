@@ -14,17 +14,21 @@ struct CardView: View {
     private enum Field { case title, notes }
     /// New-reminder mode (+ / ⌘N): edits a draft only; the reminder is created when the card closes with a title.
     private let isNew: Bool
+    /// The reminder as it was when the card opened; Esc restores it (edits are saved as you go).
+    private let original: Reminder
     @State private var discarded = false
 
     init(reminder: Reminder) {
         _base = State(initialValue: reminder)
         _draft = State(initialValue: reminder)
+        original = reminder
         isNew = false
     }
 
     init(newReminder: Reminder) {
         _base = State(initialValue: newReminder)
         _draft = State(initialValue: newReminder)
+        original = newReminder
         isNew = true
     }
 
@@ -111,8 +115,10 @@ struct CardView: View {
         .onAppear {
             focus = .title
             if isNew { store.composeFinisher = { finishNew() } } else { store.commitOpenCard = { commit() } }
+            store.cancelOpenCard = { cancel() }
         }
         .onDisappear {
+            store.cancelOpenCard = nil
             if isNew { store.composeFinisher = nil; finishNew(); return }
             store.commitOpenCard = nil
             if store.snap.reminders[base.id] == nil {
@@ -122,7 +128,7 @@ struct CardView: View {
                 commit()
             }
         }
-        .onExitCommand(perform: close)
+        .onExitCommand(perform: cancel)
         .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
             guard !isNew else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -183,6 +189,19 @@ struct CardView: View {
             return
         }
         draft.due = c
+    }
+
+    /// Esc: put back everything changed since the card opened, then close. A new reminder is discarded.
+    /// Completion stays as is (it's its own action, undoable with ⌘Z; a repeating one has already advanced).
+    private func cancel() {
+        if isNew { discarded = true; store.composing = nil; return }
+        var restore = original
+        restore.isCompleted = draft.isCompleted
+        restore.completionDate = draft.completionDate
+        restore.extras = draft.extras
+        draft = restore
+        commit()   // writes only the keys that differ from what's saved now
+        store.editingID = nil
     }
 
     private func close() {

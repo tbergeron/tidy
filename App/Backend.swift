@@ -24,19 +24,11 @@ actor Backend {
         }
     }
 
-    func requestEventAccess() async throws -> Bool {
-        try await withCheckedThrowingContinuation { c in
-            ek.requestFullAccessToEvents { granted, error in
-                if let error { c.resume(throwing: error) } else { c.resume(returning: granted) }
-            }
-        }
-    }
-
     func refreshSources() { ek.refreshSourcesIfNecessary() }
 
     // MARK: Load
 
-    func load(completedSince: Date, sectionsFor listID: String?, events range: DateInterval?, useBridge: Bool) throws -> Snapshot {
+    func load(completedSince: Date, sectionsFor listID: String?, useBridge: Bool) throws -> Snapshot {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { throw AppError.notAuthorized }
         var snap = Snapshot(completedSince: completedSince)
 
@@ -59,13 +51,6 @@ actor Backend {
         if useBridge { mergeBridge(into: &snap, sectionsFor: listID) }
         snap.bridge.report = bridgeReport + snap.bridge.report
 
-        if let range, EKEventStore.authorizationStatus(for: .event) == .fullAccess {
-            snap.events = events(in: range)
-            snap.eventCalendars = ek.calendars(for: .event).map {
-                EventCalendar(id: $0.calendarIdentifier, title: $0.title, color: RGBA($0.cgColor), account: $0.source?.title ?? "")
-            }
-            .sorted { ($0.account, $0.title) < ($1.account, $1.title) }
-        }
         return snap
     }
 
@@ -336,18 +321,6 @@ actor Backend {
             if failed > 0 { throw AppError.eventKit("Moved \(all.count - failed) of \(all.count) reminders; the list was kept.") }
         }
         do { try ek.removeCalendar(c, commit: true) } catch { throw Self.mapError(error) }
-    }
-
-    // MARK: Events (read-only)
-
-    func events(in range: DateInterval) -> [CalEvent] {
-        let p = ek.predicateForEvents(withStart: range.start, end: range.end, calendars: nil)
-        return ek.events(matching: p).map {
-            CalEvent(id: ($0.eventIdentifier ?? UUID().uuidString) + "@\($0.startDate.timeIntervalSince1970)",
-                     title: $0.title ?? "", start: $0.startDate, end: $0.endDate, isAllDay: $0.isAllDay,
-                     calendarID: $0.calendar?.calendarIdentifier ?? "",
-                     calendarTitle: $0.calendar?.title ?? "", color: RGBA($0.calendar?.cgColor))
-        }
     }
 }
 

@@ -22,7 +22,6 @@ targets:
         CFBundleDisplayName: TickTickReminders
         LSApplicationCategoryType: public.app-category.productivity
         NSRemindersFullAccessUsageDescription: "TickTickReminders shows and edits your Apple Reminders."
-        NSCalendarsFullAccessUsageDescription: "Shows your calendar events next to scheduled reminders (read-only)."
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.ticktickreminders.items
             UTTypeConformsTo: [public.data]

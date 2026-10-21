@@ -246,30 +246,6 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
     }
 }
 
-@Suite struct CalendarLayoutTests {
-    @Test func dropTimeSnapsTo15Minutes() {
-        #expect(CalendarLayout.dropTime(y: 44 * 9 + 10, hourHeight: 44, day: at(21), clock: clock) == at(21, 9, 15))
-        #expect(CalendarLayout.dropTime(y: -20, hourHeight: 44, day: at(21), clock: clock) == at(21, 0))
-        #expect(CalendarLayout.dropTime(y: 44 * 30, hourHeight: 44, day: at(21), clock: clock) == at(21, 23, 45))
-    }
-
-    @Test func overlappingItemsShareColumns() {
-        let cols = CalendarLayout.columns([
-            ("a", at(21, 9), at(21, 10)), ("b", at(21, 9, 30), at(21, 11)), ("c", at(21, 10), at(21, 10, 30)), ("d", at(21, 12), at(21, 13)),
-        ])
-        #expect(cols["a"]! == (0, 2) && cols["b"]! == (1, 2) && cols["c"]! == (0, 2))
-        #expect(cols["d"]! == (0, 1))   // separate cluster
-    }
-
-    @Test func monthGridIsWholeWeeks() {
-        let days = CalendarLayout.month(containing: at(21), clock: clock)
-        #expect(days.count % 7 == 0)
-        #expect(days.first == at(27, month: 9))   // Sunday before Oct 1, 2026
-        #expect(days.contains(at(31)))
-        #expect(CalendarLayout.week(containing: at(21), clock: clock).first == at(18))
-    }
-}
-
 @Suite struct ReviewRegressionTests {
     private let paris = TimeZone(identifier: "Europe/Paris")!
 
@@ -305,14 +281,6 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
     @Test func removingDropsNamedKeys() {
         let e = Edits.removing(["title", "date"], from: ReminderEdit(title: "x", priority: 1, due: .some(nil)))
         #expect(e.title == nil && e.due == nil && e.priority == 1)
-    }
-
-    @Test func dropTimeOnSpringForwardDay() {
-        // 2027-03-14 is DST start in Montreal: 02:00 → 03:00. A drop at the 09:00 line must give 09:00.
-        let day = clock.cal.date(from: DateComponents(year: 2027, month: 3, day: 14))!
-        let t = CalendarLayout.dropTime(y: 44 * 9, hourHeight: 44, day: day, clock: clock)
-        #expect(clock.cal.component(.hour, from: t) == 9)
-        #expect(CalendarLayout.wallHours(t, on: day, clock: clock) == 9)
     }
 }
 

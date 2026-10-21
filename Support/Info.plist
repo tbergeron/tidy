@@ -22,8 +22,6 @@
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Shows your calendar events next to scheduled reminders (read-only).</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>TickTickReminders shows and edits your Apple Reminders.</string>
 	<key>UTExportedTypeDeclarations</key>

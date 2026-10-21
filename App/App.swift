@@ -109,13 +109,6 @@ struct GeneralSettings: View {
                 ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
             }
             .onChange(of: store.completedWindowDays) { store.scheduleReload() }
-            LabeledContent("Calendar events") {
-                if store.eventAuth == .fullAccess {
-                    Text("Shown read-only in Calendar").foregroundStyle(.secondary)
-                } else {
-                    Button("Show Calendar Events…") { Task { await store.requestEventAccess() } }
-                }
-            }
         }
         .formStyle(.grouped)
     }
