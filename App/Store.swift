@@ -17,6 +17,7 @@ final class Store {
     var destination: Destination = .today {
         didSet {
             guard oldValue != destination else { return }
+            composeFinisher?()
             flushDraft()
             selection = []
             editingID = nil
@@ -26,8 +27,10 @@ final class Store {
         }
     }
     var selection: Set<String> = []
-    var editingID: String?
+    var editingID: String? { didSet { if editingID != nil { composeFinisher?() } } }
     var draft: Draft?
+    var composing: Reminder?               // the full card for a new reminder (+ / ⌘N); saved when it closes
+    @ObservationIgnored var composeFinisher: (() -> Void)?
     var search = ""
     var tagFilter: Set<String> = []
     var banner: String?
@@ -638,10 +641,41 @@ final class Store {
 
     func startDraft() {
         guard canCreate else { return }
+        composeFinisher?()
         flushDraft()
         let t = newReminderTarget(destination)
         editingID = nil
         draft = Draft(listID: t.listID, due: t.due)
+    }
+
+    /// + / ⌘N: the full card for a new reminder, dated today. Nothing is written until it closes with a title.
+    func startCompose() {
+        guard canCreate else { return }
+        composeFinisher?()
+        flushDraft()
+        editingID = nil
+        let t = newReminderTarget(destination)
+        composing = Reminder(id: "NEW-" + UUID().uuidString, listID: t.listID ?? snap.defaultListID ?? "", title: "",
+                             isCompleted: false, priority: 0,
+                             due: Due.components(clock.today, allDay: true, timeZone: nil, clock: clock), alarms: [])
+    }
+
+    /// Creates the composed reminder (if it got a title) and closes the card. Safe to call twice.
+    func finishCompose(_ d: Reminder, undo um: UndoManager?) {
+        guard composing?.id == d.id else { return }
+        composing = nil
+        let title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        let notes = (d.notes ?? "").isEmpty ? nil : d.notes
+        create(ReminderEdit(title: title, notes: notes.map { .some($0) }, priority: d.priority == 0 ? nil : d.priority,
+                            due: .some(d.due), recurrence: d.recurrence.map { .some($0) },
+                            location: d.alarms.compactMap(\.location).first.map { .some($0) }),
+               listID: list(d.listID) != nil ? d.listID : nil, undo: um)
+    }
+
+    /// Days with open reminders (dots in the date picker).
+    var dueDays: Set<Date> {
+        Set(live.lazy.filter { !$0.isCompleted }.compactMap { $0.due.flatMap { Due.day($0, clock: self.clock) } })
     }
 
     /// Saves typed draft text (if any) and closes the draft row.
@@ -654,6 +688,7 @@ final class Store {
     /// Quit: commit the open card and draft, finish queued ops, flush pending deletes.
     func drain() async {
         commitOpenCard?()
+        composeFinisher?()
         flushDraft()
         await tail?.value
         await flushDeletes()

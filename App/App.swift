@@ -41,7 +41,7 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Reminder") { store.startDraft() }.keyboardShortcut("n")
+            Button("New Reminder") { store.startCompose() }.keyboardShortcut("n")
             Button("New List…") { store.showNewList = true }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandMenu("Reminder") {

@@ -37,17 +37,15 @@ struct ReminderListView: View {
                         }
                         .listRowSeparator(.hidden)
                     }
-                    if store.draft != nil && section.id == draftSection {
-                        DraftRow().listRowSeparator(.hidden).selectionDisabled()
-                    }
+                    if section.id == draftSection { newRows }
                 } header: {
                     if !section.title.isEmpty { SectionHeader(section: section) }
                 }
             }
-            if store.draft != nil && draftSection == nil {
-                Section { DraftRow().listRowSeparator(.hidden).selectionDisabled() }
+            if draftSection == nil && (store.draft != nil || store.composing != nil) {
+                Section { newRows }
             }
-            if sections.allSatisfy({ $0.rows.isEmpty }) && store.draft == nil && store.loaded {
+            if sections.allSatisfy({ $0.rows.isEmpty }) && store.draft == nil && store.composing == nil && store.loaded {
                 Text(store.search.isEmpty ? "No Reminders" : "No Results")
                     .font(.title3).foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, minHeight: 160)
@@ -76,6 +74,7 @@ struct ReminderListView: View {
             store.editingID = nil; return .handled
         }
         .onChange(of: store.selection) { _, new in
+            if !new.isEmpty { store.composeFinisher?() }   // clicking another reminder closes (saves) the new one
             if let e = store.editingID, !new.contains(e) { store.editingID = nil }
         }
         .onChange(of: Set(sections.flatMap { $0.rows.map(\.id) })) { _, visible in
@@ -85,7 +84,7 @@ struct ReminderListView: View {
         }
         .toolbar {
             ToolbarItem {
-                Button { store.startDraft() } label: { Label("New Reminder", systemImage: "plus") }
+                Button { store.startCompose() } label: { Label("New Reminder", systemImage: "plus") }
                     .disabled(!store.canCreate)
             }
             ToolbarItem {
@@ -99,9 +98,18 @@ struct ReminderListView: View {
 
     private var isListView: Bool { if case .list = destination { true } else { false } }
 
+    /// The quick one-line draft (Space) or the full new-reminder card (+ / ⌘N).
+    @ViewBuilder private var newRows: some View {
+        if let c = store.composing {
+            CardView(newReminder: c).id(c.id).listRowSeparator(.hidden).selectionDisabled()
+        } else if store.draft != nil {
+            DraftRow().listRowSeparator(.hidden).selectionDisabled()
+        }
+    }
+
     /// The section that receives the draft row: the target list's section in grouped views, else the first plain one.
     private func draftHost(_ sections: [Store.RowSection]) -> String? {
-        let target = store.draft?.listID ?? store.snap.defaultListID
+        let target = store.composing?.listID ?? store.draft?.listID ?? store.snap.defaultListID
         if let s = sections.first(where: { $0.kind == .list(target ?? "") }) { return s.id }
         return sections.first { s in
             if case .list = s.kind { return false }
@@ -402,7 +410,7 @@ private struct DuePopover: View {
     @State private var due: DateComponents?
 
     var body: some View {
-        DueEditor(due: $due, clock: store.clock)
+        DatePanel(due: $due, clock: store.clock, startExpanded: true) { store.datePicker = nil }
             .onAppear {
                 initial = ids.first.flatMap { store.snap.reminders[$0]?.due }
                 due = initial

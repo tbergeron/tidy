@@ -12,10 +12,20 @@ struct CardView: View {
     @State private var confirmClearRepeat = false
     @FocusState private var focus: Field?
     private enum Field { case title, notes }
+    /// New-reminder mode (+ / ⌘N): edits a draft only; the reminder is created when the card closes with a title.
+    private let isNew: Bool
+    @State private var discarded = false
 
     init(reminder: Reminder) {
         _base = State(initialValue: reminder)
         _draft = State(initialValue: reminder)
+        isNew = false
+    }
+
+    init(newReminder: Reminder) {
+        _base = State(initialValue: newReminder)
+        _draft = State(initialValue: newReminder)
+        isNew = true
     }
 
     private var list: RList? { store.list(draft.listID) }
@@ -27,6 +37,7 @@ struct CardView: View {
                 CheckBox(done: draft.isCompleted, color: list.map { Color($0.color) } ?? .secondary) {
                     store.toggleComplete([draft.id], undo: um)
                 }
+                .disabled(isNew)
                 TextField("New Reminder", text: $draft.title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .semibold))
@@ -61,7 +72,7 @@ struct CardView: View {
                 Button { showDate = true } label: { Image(systemName: "calendar") }
                     .help("Date (⌘S)").keyboardShortcut("s")
                     .popover(isPresented: $showDate, arrowEdge: .bottom) {
-                        DueEditor(due: Binding(get: { draft.due }, set: { setDue($0) }), clock: store.clock)
+                        DatePanel(due: Binding(get: { draft.due }, set: { setDue($0) }), clock: store.clock) { showDate = false }
                     }
                     .onChange(of: showDate) { _, open in if !open { commit() } }   // one write per popover session
                 repeatMenu
@@ -73,15 +84,22 @@ struct CardView: View {
                     .menuIndicator(.hidden).fixedSize().help("Priority")
                 Menu {
                     ForEach(store.orderedListIDs.compactMap(store.list).filter { !$0.readOnly }) { l in
-                        Button(l.title) { commit(); store.move([draft.id], toList: l.id, undo: um) }   // asks first across accounts
+                        Button(l.title) {
+                            if isNew { draft.listID = l.id } else { commit(); store.move([draft.id], toList: l.id, undo: um) }   // asks first across accounts
+                        }
                     }
                 } label: { Image(systemName: "list.bullet") }
                     .menuIndicator(.hidden).fixedSize().help("List")
                 Menu {
-                    Button("Open in Reminders") { store.openInReminders(reminder: draft.id) }
-                    Button("Delete", role: .destructive) { store.requestDelete([draft.id], undo: um) }
+                    if isNew {
+                        Button("Discard", role: .destructive) { discarded = true; store.composing = nil }
+                    } else {
+                        Button("Open in Reminders") { store.openInReminders(reminder: draft.id) }
+                        Button("Delete", role: .destructive) { store.requestDelete([draft.id], undo: um) }
+                    }
                 } label: { Image(systemName: "ellipsis") }
                     .menuIndicator(.hidden).fixedSize()
+                Button("", action: close).keyboardShortcut(.return, modifiers: .command).hidden().frame(width: 0)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
@@ -92,9 +110,10 @@ struct CardView: View {
         .padding(.vertical, 6)
         .onAppear {
             focus = .title
-            store.commitOpenCard = { commit() }
+            if isNew { store.composeFinisher = { finishNew() } } else { store.commitOpenCard = { commit() } }
         }
         .onDisappear {
+            if isNew { store.composeFinisher = nil; finishNew(); return }
             store.commitOpenCard = nil
             if store.snap.reminders[base.id] == nil {
                 // Deleted on another device (or here) while open: keep typed text instead of dropping it.
@@ -103,13 +122,14 @@ struct CardView: View {
                 commit()
             }
         }
-        .onExitCommand { store.editingID = nil }
+        .onExitCommand(perform: close)
         .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
+            guard !isNew else { return }
             try? await Task.sleep(for: .seconds(1))
             if !Task.isCancelled { commit() }
         }
         .onChange(of: store.snap.reminders[base.id]) { _, fresh in
-            guard let fresh else { return }
+            guard !isNew, let fresh else { return }
             (base, draft) = Edits.rebase(base: base, draft: draft, fresh: fresh)
         }
         .confirmationDialog("Clearing the date also stops the repeat.", isPresented: $confirmClearRepeat) {
@@ -165,8 +185,17 @@ struct CardView: View {
         draft.due = c
     }
 
+    private func close() {
+        if isNew { finishNew() } else { store.editingID = nil }
+    }
+
+    private func finishNew() {
+        guard !discarded else { return }
+        store.finishCompose(draft, undo: um)
+    }
+
     private func commit() {
-        guard !locked, store.snap.reminders[base.id] != nil else { return }
+        guard !isNew, !locked, store.snap.reminders[base.id] != nil else { return }
         let id = base.id
         store.commitCard(draft: draft, base: base, undo: um) {
             // Failed: fall back to what's stored, so the user's text is retried on the next commit.
@@ -242,57 +271,5 @@ private struct FlowRow: Layout {
             s.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
             x += size.width + spacing; line = max(line, size.height)
         }
-    }
-}
-
-struct DueEditor: View {
-    @Binding var due: DateComponents?
-    let clock: Clock
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                quick("Today", clock.today)
-                quick("Tomorrow", Due.tomorrow(clock))
-                quick("This Weekend", Due.thisWeekend(clock))
-                quick("Next Week", Due.nextWeek(clock))
-            }
-            DatePicker("", selection: day, displayedComponents: .date)
-                .datePickerStyle(.graphical).labelsHidden()
-            Toggle("Time", isOn: hasTime)
-            if due.map({ !Due.isAllDay($0) }) == true {
-                DatePicker("", selection: day, displayedComponents: .hourAndMinute).labelsHidden()
-            }
-            if due != nil { Button("Clear Date", role: .destructive) { due = nil } }
-        }
-        .padding(14)
-        .frame(width: 300)
-    }
-
-    private func quick(_ title: String, _ d: Date) -> some View {
-        Button(title) { due = Due.moving(due, toDay: d, clock: clock) }.controlSize(.small)
-    }
-
-    private var day: Binding<Date> {
-        Binding(
-            get: { due.flatMap { Due.date($0, clock: clock) } ?? clock.today },
-            set: { new in
-                let timed = due.map { !Due.isAllDay($0) } ?? false
-                due = Due.components(new, allDay: !timed, timeZone: due?.timeZone, clock: clock)
-            })
-    }
-
-    private var hasTime: Binding<Bool> {
-        Binding(
-            get: { due.map { !Due.isAllDay($0) } ?? false },
-            set: { on in
-                let d = due.flatMap { Due.date($0, clock: clock) } ?? clock.today
-                if on {
-                    let nine = clock.cal.date(bySettingHour: 9, minute: 0, second: 0, of: d) ?? d
-                    due = Due.components(nine, allDay: false, timeZone: nil, clock: clock)
-                } else {
-                    due = Due.components(d, allDay: true, timeZone: nil, clock: clock)
-                }
-            })
     }
 }
