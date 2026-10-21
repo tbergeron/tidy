@@ -4,3 +4,4 @@ DerivedData/
 .DS_Store
 *.xcresult
 xcuserdata/
+Config/Signing.local.xcconfig

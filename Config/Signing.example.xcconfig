@@ -1,0 +1,7 @@
+// Copy to Signing.local.xcconfig (git-ignored) and fill in your own values.
+// A stable identity matters: macOS ties the Reminders permission to the app's signature,
+// so ad-hoc builds ask for access again after every build.
+TIDY_TEAM = ABCDE12345
+TIDY_DEBUG_IDENTITY = Apple Development
+TIDY_RELEASE_IDENTITY = Developer ID Application
+TIDY_RELEASE_SIGN_FLAGS = --timestamp

@@ -4,12 +4,12 @@
 
 You want a TickTick/Todoist/Things-class task manager for macOS whose **only backend is Apple Reminders**: an alternative UI over the same data that syncs to your iPhone through iCloud. It should cover everything Reminders can do: create, edit, delete, reschedule and move reminders and lists, plus groups, sections, tags, subtasks, flags and the rest.
 
-The project folder `~/Workshop/Tidy` is empty and not a git repo yet.
+The project folder was empty and not a git repo yet.
 
 The environment:
 - **Machine:** macOS 27.2 (26B5091g), Xcode 27.0, Swift 6.4.
 - **Tools:** XcodeGen is installed.
-- **Signing identities:** "Apple Development" and "Developer ID Application" (team ABCDE12345).
+- **Signing identities:** "Apple Development" and "Developer ID Application" (the developer's team).
 
 Research was done in two workflows (17 agents), covering:
 - TickTick, Todoist and Things 3 on the Mac;
@@ -390,7 +390,7 @@ TickTickReminders/
 
 - **`project.yml` (XcodeGen, `syncedFolder` sources).**
   - Deployment target macOS 27.0, `SWIFT_VERSION 6.0` (Swift 6 language mode), default isolation nonisolated (`Store` and the views are `@MainActor` explicitly).
-  - `ENABLE_HARDENED_RUNTIME YES`, team ABCDE12345.
+  - `ENABLE_HARDENED_RUNTIME YES`.
   - Targets: the app, plus a `bundle.unit-test` target with `TEST_HOST` set to the app.
 - **Bundle IDs** `com.ticktickreminders.app.dev` (Debug, Apple Development) and `com.ticktickreminders.app` (Release, Developer ID, `--timestamp`).
   - Pick them once and never change them, because TCC keys permissions on bundle ID plus designated requirement.
@@ -806,7 +806,7 @@ As specified above, with a `Logic` drop/layout implementation.
 
 **Commands:**
 ```bash
-cd ~/Workshop/Tidy && xcodegen generate
+xcodegen generate
 xcodebuild -project TickTickReminders.xcodeproj -scheme TickTickReminders -destination 'platform=macOS' build
 xcodebuild test -project TickTickReminders.xcodeproj -scheme TickTickReminders -destination 'platform=macOS' -only-testing:Tests/LogicTests
 TEST_RUNNER_TTR_INTEGRATION=1 xcodebuild test -project TickTickReminders.xcodeproj -scheme TickTickReminders -destination 'platform=macOS' -only-testing:Tests/IntegrationTests   # ttr-test user only

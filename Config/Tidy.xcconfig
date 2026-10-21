@@ -1,0 +1,8 @@
+// Signing defaults for a fresh clone: ad-hoc, no team. Put your own identities in
+// Config/Signing.local.xcconfig (git-ignored; see Signing.example.xcconfig).
+TIDY_TEAM =
+TIDY_DEBUG_IDENTITY = -
+TIDY_RELEASE_IDENTITY = -
+TIDY_RELEASE_SIGN_FLAGS =
+
+#include? "Signing.local.xcconfig"

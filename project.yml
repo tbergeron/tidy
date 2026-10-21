@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    DEVELOPMENT_TEAM: ABCDE12345
+    DEVELOPMENT_TEAM: $(TIDY_TEAM)
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "27.0"
@@ -16,6 +16,9 @@ targets:
     type: application
     platform: macOS
     sources: [App]
+    configFiles:
+      Debug: Config/Tidy.xcconfig
+      Release: Config/Tidy.xcconfig
     info:
       path: Support/Info.plist
       properties:
@@ -33,7 +36,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app.dev
-        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_IDENTITY: $(TIDY_DEBUG_IDENTITY)
         SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/TTRBridge.h
         ENABLE_RESOURCE_ACCESS_CALENDARS: YES
         GENERATE_INFOPLIST_FILE: NO
@@ -41,20 +44,23 @@ targets:
       configs:
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app
-          CODE_SIGN_IDENTITY: "Developer ID Application"
-          OTHER_CODE_SIGN_FLAGS: --timestamp
+          CODE_SIGN_IDENTITY: $(TIDY_RELEASE_IDENTITY)
+          OTHER_CODE_SIGN_FLAGS: $(TIDY_RELEASE_SIGN_FLAGS)
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
   Tests:
     type: bundle.unit-test
     platform: macOS
     sources: [Tests]
+    configFiles:
+      Debug: Config/Tidy.xcconfig
+      Release: Config/Tidy.xcconfig
     dependencies:
       - target: Tidy
     settings:
       base:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Tidy.app/Contents/MacOS/Tidy"
         BUNDLE_LOADER: "$(TEST_HOST)"
-        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_IDENTITY: $(TIDY_DEBUG_IDENTITY)
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.tests
 schemes:
