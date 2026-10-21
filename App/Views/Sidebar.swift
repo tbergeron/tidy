@@ -165,7 +165,8 @@ struct PieSlice: Shape {
 
 /// A row's `dropDestination` registers twice: on the List's table (which highlights the row and runs the action)
 /// and on a view SwiftUI lays over the row's content, which takes the drag there without highlighting.
-/// This unregisters those inner views (again after scrolling brings in new cells) so the table handles the whole row.
+/// This unregisters those inner views on ordinary rows (again after scrolling brings in new cells) so the table
+/// handles the whole row.
 /// ponytail: relies on SwiftUI's AppKit view layout; if it changes, drops still work, only the highlight gap returns.
 struct ListDropFix: NSViewRepresentable {
     let rows: Int   // re-runs when rows come and go
@@ -200,10 +201,14 @@ struct ListDropFix: NSViewRepresentable {
             unregisterInner()
         }
 
+        /// Section headings are group rows, which the table doesn't take drops on, so they keep their own target.
         private func unregisterInner() {
-            guard let table else { return }
-            for v in Self.views(table) where String(describing: type(of: v)).contains("DraggingDestination") && !v.registeredDraggedTypes.isEmpty {
-                v.unregisterDraggedTypes()
+            guard let table = table as? NSTableView else { return }
+            for r in 0..<table.numberOfRows {
+                guard let row = table.rowView(atRow: r, makeIfNecessary: false), !row.isGroupRowStyle else { continue }
+                for v in Self.views(row) where String(describing: type(of: v)).contains("DraggingDestination") && !v.registeredDraggedTypes.isEmpty {
+                    v.unregisterDraggedTypes()
+                }
             }
         }
 
