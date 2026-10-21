@@ -280,6 +280,18 @@ actor Backend {
         }
     }
 
+    // MARK: Private writes
+
+    /// Reminders' "Mark as Urgent" through the bridge (verified by read-back inside the bridge).
+    func setUrgent(_ urgent: Bool, ids: [String]) -> (updated: [Reminder], failures: [String]) {
+        guard let bridge else { return ([], ["Private features are off."]) }
+        var failures: [String] = []
+        for id in ids {
+            do { try bridge.setUrgent(urgent, reminder: id) } catch { failures.append(error.localizedDescription) }
+        }
+        return (reminders(ids, useBridge: true), failures)
+    }
+
     // MARK: Lists
 
     func createList(title: String, color: RGBA, accountID: String?) throws -> String {

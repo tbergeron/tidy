@@ -29,12 +29,31 @@
 @protocol TTR_FetchOptions <NSObject>
 + (id)fetchOptionsIncludingDueDateDeltaAlerts;
 @end
+@protocol TTR_REMStoreFetch <NSObject>
+- (nullable id)fetchReminderWithObjectID:(id)objectID error:(NSError **)error;
+- (nullable id)fetchReminderIncludingMarkedForDeleteWithObjectID:(id)objectID error:(NSError **)error;
+@end
+@protocol TTR_SaveRequest <NSObject>
+- (instancetype)initWithStore:(id)store;
+- (id)updateReminder:(id)reminder;
+- (BOOL)saveSynchronouslyWithError:(NSError **)error;
+@end
+@protocol TTR_ReminderChangeItem <NSObject>
+- (nullable id)urgentAlarmContext;
+@end
+@protocol TTR_UrgentContext <NSObject>
+- (void)setIsUrgentStateEnabledForCurrentUser:(BOOL)enabled;
+@end
 @protocol TTR_SectionsDataView <NSObject>
 - (instancetype)initWithStore:(id)store;
 - (nullable id)fetchListSectionWithReminderID:(id)objectID error:(NSError **)error;
 @end
 
 static NSString *const TTRErrorDomain = @"TTRBridge";
+
+static NSError *TTRError(NSString *message) {
+    return [NSError errorWithDomain:TTRErrorDomain code:2 userInfo:@{NSLocalizedDescriptionKey: message}];
+}
 
 static NSError *TTRErrorFromException(NSException *x) {
     return [NSError errorWithDomain:TTRErrorDomain code:1
@@ -328,6 +347,77 @@ static NSArray<NSString *> *TTRCapabilityKeys(void) {
     }
     i.hourly = hourly;
     return i;
+}
+
+#pragma mark - Writes
+
+/// Everything that must NOT change when one field is written (compared before/after as descriptions).
+- (NSDictionary<NSString *, NSString *> *)fingerprint:(id)rem {
+    NSMutableDictionary *f = [NSMutableDictionary dictionary];
+    for (NSString *k in @[@"title", @"notes", @"dueDateComponents", @"startDateComponents", @"completed", @"completionDate",
+                          @"flagged", @"priority", @"timeZone"]) {
+        f[k] = [TTRValue(rem, k) description] ?: @"nil";
+    }
+    f[@"list"] = TTRUUID(TTRValue(rem, @"listID")) ?: @"nil";
+    f[@"parent"] = TTRUUID(TTRValue(rem, @"parentReminderID")) ?: @"nil";
+    NSMutableArray *tags = [NSMutableArray array];
+    for (id h in TTRArray(TTRValue(rem, @"hashtags"))) { NSString *n = TTRString(h, @"name"); if (n) [tags addObject:n]; }
+    f[@"tags"] = [[tags sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","];
+    return f;
+}
+
+- (BOOL)setUrgent:(BOOL)urgent reminder:(NSString *)reminderID error:(NSError **)error {
+    @try {
+        id oid = TTRObjectID(@"REMReminder", reminderID);
+        Class saveClass = TTRClass(@"REMSaveRequest");
+        if (!oid || !saveClass || ![_store respondsToSelector:@selector(fetchReminderWithObjectID:error:)]) {
+            if (error) *error = TTRError(@"Urgent isn't available on this macOS version.");
+            return NO;
+        }
+        id<TTR_REMStoreFetch> store = (id<TTR_REMStoreFetch>)_store;
+        id rem = [store fetchReminderWithObjectID:oid error:error];
+        if (!rem) return NO;
+        NSDictionary *before = [self fingerprint:rem];
+
+        id<TTR_SaveRequest> request = [(id<TTR_SaveRequest>)[saveClass alloc] initWithStore:_store];
+        id change = [request updateReminder:rem];
+        id context = [change respondsToSelector:@selector(urgentAlarmContext)] ? [(id<TTR_ReminderChangeItem>)change urgentAlarmContext] : nil;
+        if (![context respondsToSelector:@selector(setIsUrgentStateEnabledForCurrentUser:)]) {
+            if (error) *error = TTRError(@"This reminder's account doesn't support Urgent.");
+            return NO;   // nothing saved
+        }
+        [(id<TTR_UrgentContext>)context setIsUrgentStateEnabledForCurrentUser:urgent];
+        NSError *saveError = nil;
+        if (![request saveSynchronouslyWithError:&saveError]) {
+            if (error) *error = saveError ?: TTRError(@"Reminders didn't save the change.");
+            return NO;
+        }
+
+        // Read back: the value took, nothing else moved, and the reminder still exists.
+        id fresh = [store fetchReminderWithObjectID:oid error:nil];
+        if (!fresh) {
+            BOOL tombstoned = [store respondsToSelector:@selector(fetchReminderIncludingMarkedForDeleteWithObjectID:error:)]
+                && [store fetchReminderIncludingMarkedForDeleteWithObjectID:oid error:nil] != nil;
+            if (error) *error = TTRError(tombstoned ? @"VERIFY: the reminder was moved to Recently Deleted by the change. Recover it in Reminders."
+                                                    : @"VERIFY: the reminder can't be read back.");
+            return NO;
+        }
+        if (TTRBool(fresh, @"isUrgentStateEnabledForCurrentUser") != urgent) {
+            if (error) *error = TTRError(@"VERIFY: Reminders didn't keep the Urgent change.");
+            return NO;
+        }
+        NSDictionary *after = [self fingerprint:fresh];
+        for (NSString *k in before) {
+            if (![before[k] isEqualToString:after[k]]) {
+                if (error) *error = TTRError([NSString stringWithFormat:@"VERIFY: setting Urgent also changed “%@”.", k]);
+                return NO;
+            }
+        }
+        return YES;
+    } @catch (NSException *x) {
+        if (error) *error = TTRErrorFromException(x);
+        return NO;
+    }
 }
 
 - (NSArray<TTRSectionInfo *> *)sectionsInList:(NSString *)listID error:(NSError **)error {

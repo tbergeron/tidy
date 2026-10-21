@@ -392,42 +392,54 @@ struct ReminderMenu: View {
     var body: some View {
         let one = ids.count == 1 ? store.snap.reminders[ids[0]] : nil
         let locked = ids.allSatisfy(store.locked)
-        Button(one?.isCompleted == true ? "Mark as Not Completed" : "Mark as Completed") { store.toggleComplete(ids, undo: um) }
+        let rs = ids.compactMap { store.snap.reminders[$0] }
+        Button(one?.isCompleted == true ? "Mark as Not Completed" : "Mark as Completed",
+               systemImage: one?.isCompleted == true ? "circle" : "checkmark.circle") { store.toggleComplete(ids, undo: um) }
             .disabled(locked)
-        Menu("Due") {
+        Menu("Due", systemImage: "calendar") {
             ForEach(DuePreset.allCases, id: \.self) { p in
-                Button(p.name) {
+                Button(p.name, systemImage: p.symbol) {
                     let d = p.date(store.clock)
                     store.setDue(ids, { Due.components(d, allDay: false, timeZone: $0.due?.timeZone, clock: store.clock) }, undo: um)
                 }
             }
             Divider()
-            Button("Pick a Date…") {
+            Button("Pick a Date…", systemImage: "calendar.badge.plus") {
                 guard let a = anchor ?? ids.first else { return }
                 if store.editingID == a { store.editingID = nil }   // the popover anchors on the row, not the open card
                 store.datePicker = (a, ids)
             }
-            Button("Remove Date") { store.setDue(ids, { _ in nil }, undo: um) }
+            Button("Remove Date", systemImage: "xmark.circle") { store.setDue(ids, { _ in nil }, undo: um) }
         }
         .disabled(locked)
-        Menu("Priority") {
-            ForEach(Priority.allCases.reversed(), id: \.self) { p in Button(p.label) { store.setPriority(ids, p, undo: um) } }
+        if store.bridgeReadable {
+            let urgent = !rs.isEmpty && rs.allSatisfy { $0.extras?.urgent == true }
+            Button(urgent ? "Remove Urgent" : "Mark as Urgent", systemImage: urgent ? "alarm.waves.left.and.right.fill" : "alarm.waves.left.and.right") {
+                store.setUrgent(ids, !urgent, undo: um)
+            }
+            .disabled(!rs.contains(where: store.canSetUrgent))
+            .help("Needs a date with a time")
+        }
+        Menu("Priority", systemImage: "exclamationmark") {
+            ForEach(Priority.allCases.reversed(), id: \.self) { p in
+                Toggle(p.label, isOn: Binding(get: { one.map { Priority(raw: $0.priority) == p } ?? false },
+                                              set: { _ in store.setPriority(ids, p, undo: um) }))
+            }
         }
         .disabled(locked)
-        Button("Move to…") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
+        Button("Move to…", systemImage: "folder") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
         if let one {
             Divider()
-            Button("Show Info") { store.editingID = one.id }
-            Button("Open in Reminders") { store.openInReminders(reminder: one.id) }
-            Button("Copy Link") {
+            Button("Show Info", systemImage: "info.circle") { store.editingID = one.id }
+            Button("Open in Reminders", systemImage: "arrow.up.forward.app") { store.openInReminders(reminder: one.id) }
+            Button("Copy Link", systemImage: "link") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString("x-apple-reminderkit://REMCDReminder/\(one.id)", forType: .string)
             }
         }
         Divider()
-        Button("Delete", role: .destructive) { store.requestDelete(ids, undo: um) }.disabled(locked)
+        Button("Delete", systemImage: "trash", role: .destructive) { store.requestDelete(ids, undo: um) }.disabled(locked)
     }
-
 }
 
 /// "Pick a Date…" from the context menu. One write when it closes; applies the same date to every selected reminder.

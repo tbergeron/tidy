@@ -516,6 +516,31 @@ final class Store {
         applyEdits(items.filter { !($0.1 == nil && $0.2) }.map { ($0.0, ReminderEdit(due: .some($0.1))) }, name: "Reschedule", undo: um)
     }
 
+    /// Urgent needs the private bridge, an account that supports it, and a date with a time (the alarm rings then).
+    private(set) var urgentTripped = false
+    func canSetUrgent(_ r: Reminder) -> Bool {
+        bridgeReadable && !urgentTripped && !locked(r.id) && r.due.map { !Due.isAllDay($0) } == true
+            && account(list(r.listID)?.accountID ?? "")?.caps.contains("supportsUrgentAlarm") == true
+    }
+
+    func setUrgent(_ ids: [String], _ on: Bool, undo um: UndoManager?) {
+        let targets = ids.compactMap { snap.reminders[$0] }.filter { canSetUrgent($0) && ($0.extras?.urgent ?? false) != on }.map(\.id)
+        guard !targets.isEmpty else { return }
+        let token = newToken()
+        um?.registerUndo(withTarget: token) { _ in self.setUrgent(targets, !on, undo: um) }
+        um?.setActionName(on ? "Mark as Urgent" : "Remove Urgent")
+        enqueue {
+            let (updated, failures) = await self.backend.setUrgent(on, ids: targets)
+            updated.forEach { self.merge($0) }
+            if let first = failures.first {
+                // A failed read-back means the private call didn't behave as verified: stop using it this session.
+                if first.hasPrefix("VERIFY") { self.urgentTripped = true }
+                self.fail(first.replacingOccurrences(of: "VERIFY: ", with: "") + (self.urgentTripped ? " Urgent is turned off until the app restarts." : ""))
+                um?.removeAllActions(withTarget: token)
+            }
+        }
+    }
+
     func setPriority(_ ids: [String], _ p: Priority, undo um: UndoManager?) {
         applyEdits(ids.map { ($0, ReminderEdit(priority: p.raw)) }, name: "Priority", undo: um)
     }

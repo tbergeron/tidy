@@ -59,6 +59,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSArray<TTRSectionInfo *> *)sectionsInList:(NSString *)listID error:(NSError **)error;
 /// reminder ID → section ID, for reminders that are in a section. ponytail: one XPC call per reminder.
 - (nullable NSDictionary<NSString *, NSString *> *)sectionIDsForReminders:(NSArray<NSString *> *)ids error:(NSError **)error;
+
+// MARK: Writes (private). Each is one REMSaveRequest on a freshly fetched object, with the save result checked
+// and the reminder read back: the changed field must hold the new value and every other field must be unchanged.
+
+/// Reminders' "Mark as Urgent". Fails (and changes nothing visible) if the reminder or account doesn't support it.
+- (BOOL)setUrgent:(BOOL)urgent reminder:(NSString *)reminderID error:(NSError **)error;
 @end
 
 NS_ASSUME_NONNULL_END
