@@ -106,14 +106,14 @@ enum DuePreset: CaseIterable, Sendable {
         }
     }
 
-    /// Trailing detail in the date panel: "9:00 AM", "Thu 9:00 AM", "Wed, Oct 28, 9:00 AM".
+    /// Trailing detail in the date panel: "9:00 AM", "Thu 9:00 AM", "Oct 28, 9:00 AM".
     func detail(_ clock: Clock) -> String {
         let d = date(clock), tz = clock.cal.timeZone
         let time = d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: tz))
         switch self {
         case .todayMorning, .thisEvening: return time
         case .tomorrowMorning: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated)) + " " + time
-        case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated).month(.abbreviated).day()) + ", " + time
+        case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).month(.abbreviated).day()) + ", " + time
         }
     }
 }

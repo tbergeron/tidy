@@ -416,7 +416,7 @@ private struct DuePopover: View {
     @State private var due: DateComponents?
 
     var body: some View {
-        DatePanel(due: $due, clock: store.clock, startExpanded: true) { store.datePicker = nil }
+        DatePanel(due: $due, clock: store.clock) { store.datePicker = nil }
             .onAppear {
                 initial = ids.first.flatMap { store.snap.reminders[$0]?.due }
                 due = initial

@@ -1,26 +1,25 @@
 import SwiftUI
 
-/// The date picker used by the card and the context menu: quick presets, then a custom month grid with time.
+/// The date picker used by the card and the context menu: presets on the left, month grid + time on the right.
+/// Its size never changes while open (a growing popover gets re-placed by AppKit and jumps across the screen).
 /// Edits `due` only; callers write once when the popover closes.
 struct DatePanel: View {
     @Binding var due: DateComponents?
     let clock: Clock
     let close: () -> Void
     @Environment(Store.self) private var store
-    @State private var expanded: Bool
     @State private var month: Date
 
-    init(due: Binding<DateComponents?>, clock: Clock, startExpanded: Bool = false, close: @escaping () -> Void) {
+    init(due: Binding<DateComponents?>, clock: Clock, close: @escaping () -> Void) {
         _due = due
         self.clock = clock
         self.close = close
-        _expanded = State(initialValue: startExpanded)
         _month = State(initialValue: due.wrappedValue.flatMap { Due.date($0, clock: clock) } ?? clock.now)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 1) {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
                 ForEach(DuePreset.allCases, id: \.self) { p in
                     PanelRow(icon: p.symbol, tint: p.tint, title: p.name, detail: p.detail(clock),
                              checked: Due.same(due, preset(p), clock: clock)) {
@@ -28,45 +27,43 @@ struct DatePanel: View {
                         close()
                     }
                 }
-                PanelRow(icon: "calendar", tint: .accentColor, title: "Pick a Date…",
-                         detail: expanded ? nil : summary, checked: false, chevron: expanded ? "chevron.up" : "chevron.down") {
-                    withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
+                PanelRow(icon: "xmark.circle.fill", tint: .red, title: "Remove Date", detail: nil, checked: false) {
+                    due = nil
+                    close()
                 }
-                if due != nil {
-                    PanelRow(icon: "xmark.circle.fill", tint: .red, title: "Remove Date", detail: nil, checked: false) {
-                        due = nil
-                        close()
-                    }
-                }
+                .disabled(due == nil)
+                .opacity(due == nil ? 0.4 : 1)
+                Spacer(minLength: 0)
+                Text(due.map { Display.duePill($0, clock: clock).text } ?? "No date")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(due == nil ? .tertiary : .secondary)
+                    .padding(.horizontal, 8).padding(.bottom, 4)
             }
             .padding(6)
+            .frame(width: 268)
 
-            if expanded {
-                Divider().padding(.horizontal, 10)
-                VStack(alignment: .leading, spacing: 12) {
-                    MonthGridPicker(selection: due.flatMap { Due.day($0, clock: clock) }, month: $month,
-                                    clock: clock, marked: store.dueDays) { day in
-                        due = Due.moving(due, toDay: day, clock: clock)
-                    }
-                    TimeRow(due: $due, clock: clock)
-                    HStack {
-                        if let due { Text(Display.duePill(due, clock: clock).text).font(.callout).foregroundStyle(.secondary) }
-                        Spacer()
-                        Button("Done", action: close).keyboardShortcut(.defaultAction).controlSize(.regular)
-                    }
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                MonthGridPicker(selection: due.flatMap { Due.day($0, clock: clock) }, month: $month,
+                                clock: clock, marked: store.dueDays) { day in
+                    due = Due.moving(due, toDay: day, clock: clock)
                 }
-                .padding(12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                TimeRow(due: $due, clock: clock)
+                HStack {
+                    Spacer()
+                    Button("Done", action: close).keyboardShortcut(.defaultAction)
+                }
             }
+            .padding(12)
+            .frame(width: 272)
         }
-        .frame(width: 290)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func preset(_ p: DuePreset) -> DateComponents {
         Due.components(p.date(clock), allDay: false, timeZone: due?.timeZone, clock: clock)
     }
-
-    private var summary: String? { due.map { Display.duePill($0, clock: clock).text } }
 }
 
 extension DuePreset {
@@ -95,7 +92,6 @@ private struct PanelRow: View {
     let title: String
     let detail: String?
     let checked: Bool
-    var chevron: String?
     let action: () -> Void
     @State private var hover = false
 
@@ -108,9 +104,8 @@ private struct PanelRow: View {
                     .frame(width: 18)
                 Text(title)
                 Spacer(minLength: 12)
-                if let detail { Text(detail).foregroundStyle(.secondary).monospacedDigit() }
+                if let detail { Text(detail).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize() }
                 if checked { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor) }
-                if let chevron { Image(systemName: chevron).font(.caption2.weight(.semibold)).foregroundStyle(.tertiary) }
             }
             .font(.system(size: 13))
             .padding(.horizontal, 8)
@@ -235,26 +230,25 @@ private struct TimeRow: View {
                     Button { setTime(nil) } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).foregroundStyle(.tertiary).help("Remove time")
                 } else {
-                    Button("Add Time") { setTime(9) }.buttonStyle(.link)
+                    Text("No time — pick one below").foregroundStyle(.tertiary)
                     Spacer()
                 }
             }
-            if timed {
-                HStack(spacing: 6) {
-                    ForEach(Self.quickHours, id: \.self) { h in
-                        let selected = due.flatMap { Due.date($0, clock: clock) }.map {
-                            clock.cal.component(.hour, from: $0) == h && clock.cal.component(.minute, from: $0) == 0
-                        } ?? false
-                        Button { setTime(h) } label: {
-                            Text(label(h)).font(.system(size: 11, weight: .medium)).monospacedDigit()
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
-                                .foregroundStyle(selected ? .white : .primary)
-                        }
-                        .buttonStyle(.plain)
+            .frame(height: 22)
+            HStack(spacing: 5) {
+                ForEach(Self.quickHours, id: \.self) { h in
+                    let selected = timed && (due.flatMap { Due.date($0, clock: clock) }.map {
+                        clock.cal.component(.hour, from: $0) == h && clock.cal.component(.minute, from: $0) == 0
+                    } ?? false)
+                    Button { setTime(h) } label: {
+                        Text(label(h)).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                            .lineLimit(1).fixedSize()
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
+                            .foregroundStyle(selected ? .white : .primary)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.leading, 26)
             }
         }
     }
