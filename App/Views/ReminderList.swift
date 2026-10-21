@@ -19,6 +19,7 @@ struct ReminderListView: View {
         @Bindable var store = store
         let sections = store.sections(destination)
         let draftSection = draftHost(sections)
+        let firstTitled = sections.first { !$0.title.isEmpty }?.id
 
         List(selection: $store.selection) {
             ListHeader(destination: destination)
@@ -27,6 +28,11 @@ struct ReminderListView: View {
 
             ForEach(sections) { section in
                 Section {
+                    // The first heading is a plain row: a section header at the very top would be pinned
+                    // to the toolbar before you scroll. Later headers pin as you scroll past them.
+                    if section.id == firstTitled {
+                        SectionHeader(section: section).selectionDisabled().listRowSeparator(.hidden)
+                    }
                     ForEach(section.rows) { row in
                         Group {
                             if store.editingID == row.id {
@@ -40,7 +46,7 @@ struct ReminderListView: View {
                     }
                     if section.id == draftSection { newRows }
                 } header: {
-                    if !section.title.isEmpty { SectionHeader(section: section) }
+                    if !section.title.isEmpty && section.id != firstTitled { SectionHeader(section: section) }
                 }
             }
             if draftSection == nil && (store.draft != nil || store.composing != nil) {
@@ -54,7 +60,6 @@ struct ReminderListView: View {
             }
         }
         .listStyle(.inset)
-        .environment(\.defaultMinListRowHeight, 1)   // lets the 1-pt top spacer row stay 1 pt
         .focused($listFocused)
         // Keep keyboard focus on the list so Return / Space / ⌫ work without clicking first.
         .onAppear { listFocused = true }
@@ -161,9 +166,6 @@ private struct ListHeader: View {
                 }
             }
             .padding(.vertical, 4)
-        } else {
-            // Keeps the first section header in the list at rest; headers only pin to the top once you scroll.
-            Color.clear.frame(height: 1).listRowInsets(EdgeInsets())
         }
     }
 }
