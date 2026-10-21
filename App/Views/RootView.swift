@@ -36,15 +36,16 @@ struct MainView: View {
         .sheet(isPresented: $store.showNewList) { ListEditor(list: nil) }
         .sheet(item: $store.listToEdit) { ListEditor(list: $0) }
         .sheet(isPresented: $store.showMoveSheet) { MoveSheet(ids: Array(store.selection)) }
-        .confirmationDialog("Delete repeating reminder?", isPresented: Binding(
+        .confirmationDialog(deleteText.title, isPresented: Binding(
             get: { store.confirmDeleteIDs != nil }, set: { if !$0 { store.confirmDeleteIDs = nil } })
         ) {
-            Button("Delete All Occurrences", role: .destructive) {
+            Button(deleteText.button, role: .destructive) {
                 if let ids = store.confirmDeleteIDs { store.delete(ids, undo: um) }
                 store.confirmDeleteIDs = nil
             }
+            .keyboardShortcut(.defaultAction)
         } message: {
-            Text("Reminders deletes every future occurrence of a repeating reminder. Deleting only this one isn't available yet.")
+            Text(deleteText.message)
         }
         .confirmationDialog("Move to another account?", isPresented: Binding(
             get: { store.pendingCrossMove != nil }, set: { if !$0 { store.pendingCrossMove = nil } })
@@ -74,6 +75,7 @@ struct MainView: View {
     }
 
     private var deleteListTitle: String { "Delete “\(store.listToDelete?.title ?? "")”?" }
+    private var deleteText: (title: String, message: String, button: String) { store.deleteConfirmation(store.confirmDeleteIDs ?? []) }
 }
 
 struct BannerView: View {

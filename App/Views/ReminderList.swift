@@ -61,12 +61,13 @@ struct ReminderListView: View {
             if ids.count == 1 { store.draft = nil; store.editingID = ids.first }
         }
         .onDeleteCommand { store.requestDelete(Array(store.selection), undo: um) }
+        // List shortcuts only when nothing is being typed (card, new-reminder card, draft row, search, renames).
         .onKeyPress(.space) {
-            guard store.editingID == nil, store.draft == nil else { return .ignored }
+            guard !isTyping else { return .ignored }
             store.startDraft(); return .handled
         }
         .onKeyPress(.return) {
-            guard store.editingID == nil, store.draft == nil, store.selection.count == 1 else { return .ignored }
+            guard !isTyping, store.selection.count == 1 else { return .ignored }
             store.editingID = store.selection.first; return .handled
         }
         .onKeyPress(.escape) {
@@ -97,6 +98,11 @@ struct ReminderListView: View {
     }
 
     private var isListView: Bool { if case .list = destination { true } else { false } }
+
+    private var isTyping: Bool {
+        NSApp.keyWindow?.firstResponder is NSText   // a text field's field editor
+            || store.editingID != nil || store.composing != nil || store.draft != nil
+    }
 
     /// The quick one-line draft (Space) or the full new-reminder card (+ / ⌘N).
     @ViewBuilder private var newRows: some View {

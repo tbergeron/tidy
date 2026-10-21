@@ -640,10 +640,22 @@ final class Store {
         }
     }
 
-    /// Asks first when a repeating reminder is involved (EventKit deletes the whole series).
+    /// Every delete is confirmed first (the dialog is in MainView).
     func requestDelete(_ ids: [String], undo um: UndoManager?) {
-        let ids = ids.filter { !locked($0) }
-        if ids.contains(where: { snap.reminders[$0]?.isRepeating == true }) { confirmDeleteIDs = ids } else { delete(ids, undo: um) }
+        let ids = ids.filter { !locked($0) && snap.reminders[$0] != nil && pendingDeletes[$0] == nil }
+        if !ids.isEmpty { confirmDeleteIDs = ids }
+    }
+
+    /// Title, message and button for the delete confirmation.
+    func deleteConfirmation(_ ids: [String]) -> (title: String, message: String, button: String) {
+        let rs = ids.compactMap { snap.reminders[$0] }
+        let subtasks = Set(rs.flatMap { children(of: $0.id).map(\.id) }).subtracting(ids).count
+        let title = rs.count == 1 ? "Delete “\(rs[0].title.isEmpty ? "New Reminder" : rs[0].title)”?" : "Delete \(rs.count) reminders?"
+        var notes: [String] = []
+        if subtasks > 0 { notes.append(subtasks == 1 ? "Its subtask is deleted too." : "Their \(subtasks) subtasks are deleted too.") }
+        if rs.contains(where: \.isRepeating) { notes.append("Repeating reminders are deleted with all future occurrences.") }
+        notes.append("You can undo with ⌘Z, or recover it later from Recently Deleted in Reminders.")
+        return (title, notes.joined(separator: " "), rs.contains(where: \.isRepeating) ? "Delete All Occurrences" : "Delete")
     }
 
     func moveOverdueToToday(undo um: UndoManager?) {
