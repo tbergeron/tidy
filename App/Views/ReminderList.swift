@@ -13,6 +13,7 @@ struct ReminderListView: View {
     let destination: Destination
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         @Bindable var store = store
@@ -53,6 +54,11 @@ struct ReminderListView: View {
             }
         }
         .listStyle(.inset)
+        .focused($listFocused)
+        // Keep keyboard focus on the list so Return / Space / ⌫ work without clicking first.
+        .onAppear { listFocused = true }
+        .onChange(of: destination) { listFocused = true }
+        .onChange(of: store.editingID == nil && store.composing == nil && store.draft == nil) { _, idle in if idle { listFocused = true } }
         .scrollContentBackground(.visible)
         .contextMenu(forSelectionType: String.self) { ids in
             // Anchor for popovers: the topmost selected row as shown.
@@ -67,7 +73,9 @@ struct ReminderListView: View {
             store.startDraft(); return .handled
         }
         .onKeyPress(.return) {
-            guard !isTyping, store.selection.count == 1 else { return .ignored }
+            guard !isTyping else { return .ignored }
+            if store.selection.isEmpty { store.startCompose(); return .handled }   // nothing selected: new reminder
+            guard store.selection.count == 1 else { return .ignored }
             store.editingID = store.selection.first; return .handled
         }
         .onKeyPress(.escape) {
