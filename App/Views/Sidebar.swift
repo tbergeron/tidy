@@ -20,7 +20,7 @@ struct Sidebar: View {
                     Label { Text(title) } icon: { Image(systemName: icon).foregroundStyle(color) }
                         .badge(store.count(d) ?? 0)
                         .tag(d)
-                        .rowDrop { drop($0, on: d) }
+                        .dropDestination(for: DragItems.self) { items, _ -> Bool in drop(items, on: d) }
                         .contextMenu { Button("Hide “\(title)”") { store.hiddenSmartLists.insert(title) } }
                 }
                 .onMove { from, to in store.reorder(smart.map(store.title), from: from, to: to, in: &store.smartOrder) }
@@ -113,7 +113,7 @@ struct ListRow: View {
         }
         .badge(store.count(.list(list.id)) ?? 0)
         .tag(Destination.list(list.id))
-        .rowDrop { items in
+        .dropDestination(for: DragItems.self) { items, _ in
             guard !list.readOnly else { return false }
             store.move(items.flatMap(\.reminderIDs), toList: list.id, undo: um)
             return true
@@ -158,15 +158,6 @@ struct PieSlice: Shape {
         p.addArc(center: c, radius: rect.width / 2, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(fraction, 1)), clockwise: false)
         p.closeSubpath()
         return p
-    }
-}
-
-extension View {
-    /// Drops on a sidebar row: one clear target over the whole row (the title text otherwise swallows the drag).
-    /// It has no gestures, so clicks still select the row.
-    func rowDrop(_ action: @escaping ([DragItems]) -> Bool) -> some View {
-        frame(maxWidth: .infinity, alignment: .leading)
-            .overlay { Color.clear.contentShape(Rectangle()).dropDestination(for: DragItems.self) { items, _ in action(items) } }
     }
 }
 
