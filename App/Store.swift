@@ -502,8 +502,9 @@ final class Store {
             let sorted = Sorting.sorted(rs, style: l?.sortingStyle, manual: l?.manualOrder ?? [], clock: clock)
             let secs = snap.sections[id] ?? []
             let sectionOf: (Reminder) -> String? = { r in
-                // Subtasks follow their parent's section.
-                let key = r.parentID.flatMap { p in sorted.contains { $0.id == p } ? p : nil } ?? r.id
+                // Subtasks follow their parent's section — looked up in the whole list, not just the rows a
+                // search or tag filter left visible (only the parent's membership is fetched; see Backend.needsSection).
+                let key = r.parentID.flatMap { p in self.snap.reminders[p]?.listID == id ? p : nil } ?? r.id
                 return self.snap.sectionOf[key].flatMap { s in secs.contains { $0.id == s } ? s : nil }
             }
             let unsectioned = sorted.filter { sectionOf($0) == nil }

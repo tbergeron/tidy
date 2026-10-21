@@ -450,3 +450,25 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(Set(Backend.needsSection(rs)) == ["P", "O"])
     }
 }
+
+
+@MainActor @Suite struct SectionFilterTests {
+    /// The filter (search, or a tag only the subtask has) hides the parent but keeps the subtask.
+    @Test(arguments: [true, false]) func subtaskKeepsParentSectionWhenFilterHidesParent(bySearch: Bool) {
+        let s = Store()
+        var snap = Snapshot()
+        snap.lists = [RList(id: "L", title: "L", color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)]
+        var parent = reminder("P"); parent.title = "Groceries"
+        var child = reminder("C", parent: "P"); child.title = "Buy milk"; child.extras?.tags = ["dairy"]
+        snap.reminders = ["P": parent, "C": child]
+        snap.sections["L"] = [RSection(id: "S1", name: "Errands")]
+        snap.sectionOf = ["P": "S1"]   // only the parent's membership is fetched
+        s.snap = snap
+        s.destination = .list("L")
+        if bySearch { s.search = "milk" } else { s.tagFilter = ["dairy"] }
+        let sections = s.sections(.list("L"))
+        #expect(sections.first { $0.id == "S1" }?.rows.map(\.id) == ["C"])
+        #expect(sections.first { $0.title.isEmpty }?.rows.isEmpty != false)
+        s.search = ""
+    }
+}
