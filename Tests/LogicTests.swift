@@ -245,3 +245,27 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(!Display.duePill(allDay(23), clock: clock).overdue)
     }
 }
+
+@Suite struct CalendarLayoutTests {
+    @Test func dropTimeSnapsTo15Minutes() {
+        #expect(CalendarLayout.dropTime(y: 44 * 9 + 10, hourHeight: 44, day: at(21), clock: clock) == at(21, 9, 15))
+        #expect(CalendarLayout.dropTime(y: -20, hourHeight: 44, day: at(21), clock: clock) == at(21, 0))
+        #expect(CalendarLayout.dropTime(y: 44 * 30, hourHeight: 44, day: at(21), clock: clock) == at(21, 23, 45))
+    }
+
+    @Test func overlappingItemsShareColumns() {
+        let cols = CalendarLayout.columns([
+            ("a", at(21, 9), at(21, 10)), ("b", at(21, 9, 30), at(21, 11)), ("c", at(21, 10), at(21, 10, 30)), ("d", at(21, 12), at(21, 13)),
+        ])
+        #expect(cols["a"]! == (0, 2) && cols["b"]! == (1, 2) && cols["c"]! == (0, 2))
+        #expect(cols["d"]! == (0, 1))   // separate cluster
+    }
+
+    @Test func monthGridIsWholeWeeks() {
+        let days = CalendarLayout.month(containing: at(21), clock: clock)
+        #expect(days.count % 7 == 0)
+        #expect(days.first == at(27, month: 9))   // Sunday before Oct 1, 2026
+        #expect(days.contains(at(31)))
+        #expect(CalendarLayout.week(containing: at(21), clock: clock).first == at(18))
+    }
+}

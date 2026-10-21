@@ -46,7 +46,8 @@ final class Store {
     var bridgeEnabled = UserDefaults.standard.object(forKey: "bridgeEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(bridgeEnabled, forKey: "bridgeEnabled"); scheduleReload() }
     }
-    var completedWindowDays = 30
+    var completedWindowDays = 30 { didSet { scheduleReload() } }
+    var calendarAnchor = Date()
 
     struct Draft: Equatable { var listID: String?; var due: DateComponents?; var text = "" }
 
@@ -141,8 +142,25 @@ final class Store {
     var viewedListID: String? { if case .list(let id) = destination { id } else { nil } }
     var eventRange: DateInterval? {
         guard eventAuth == .fullAccess else { return nil }
-        let start = clock.cal.date(byAdding: .day, value: -45, to: clock.today)!
-        return DateInterval(start: start, end: clock.cal.date(byAdding: .day, value: 75, to: clock.today)!)
+        let anchor = clock.cal.startOfDay(for: calendarAnchor)
+        let start = clock.cal.date(byAdding: .day, value: -45, to: anchor) ?? anchor
+        return DateInterval(start: start, end: clock.cal.date(byAdding: .day, value: 75, to: anchor) ?? anchor)
+    }
+
+    /// Calendar: reminders due on `day` (overdue ones stay on their past day, drawn red).
+    func remindersOn(_ day: Date) -> [Reminder] {
+        let d = clock.cal.startOfDay(for: day)
+        let showDone = showCompleted.contains("smart")
+        return live.filter { r in
+            (!r.isCompleted || showDone || justCompleted.contains(r.id)) && r.due.flatMap { Due.day($0, clock: clock) } == d
+        }
+        .sorted { ($0.due.flatMap { Due.date($0, clock: clock) } ?? d, $0.id) < ($1.due.flatMap { Due.date($0, clock: clock) } ?? d, $1.id) }
+    }
+
+    func eventsOn(_ day: Date) -> [CalEvent] {
+        let s = clock.cal.startOfDay(for: day)
+        let e = clock.cal.date(byAdding: .day, value: 1, to: s) ?? s
+        return snap.events.filter { $0.start < e && $0.end > s }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
     }
     var bridgeReadable: Bool { bridgeEnabled && snap.bridge.readOK }
     var hasPendingWork: Bool { !pendingDeletes.isEmpty }
@@ -452,13 +470,14 @@ final class Store {
         applyEdits(ids.filter { snap.reminders[$0]?.listID != listID }.map { ($0, ReminderEdit(listID: listID)) }, name: "Move", undo: um)
     }
 
-    func create(title: String, listID: String?, due: DateComponents?, undo um: UndoManager?) {
+    func create(title: String, listID: String?, due: DateComponents?, undo um: UndoManager?, open: Bool = false) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         enqueue {
             do {
                 let r = try await self.backend.create(ReminderEdit(title: title, due: .some(due)), listID: listID)
                 self.merge(r)
+                if open { self.selection = [r.id]; self.editingID = r.id }
                 let token = self.newToken()
                 um?.registerUndo(withTarget: token) { _ in self.delete([r.id], undo: um) }
                 um?.setActionName("New Reminder")

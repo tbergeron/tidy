@@ -401,3 +401,51 @@ enum Display {
             || listTitle.localizedStandardContains(q) || (r.extras?.tags ?? []).contains { $0.localizedStandardContains(q) }
     }
 }
+
+// MARK: - Calendar layout
+
+enum CalendarLayout {
+    /// Time for a drop at `y` points into a day column, snapped to 15 minutes.
+    static func dropTime(y: CGFloat, hourHeight: CGFloat, day: Date, clock: Clock) -> Date {
+        let minutes = max(0, min(24 * 60 - 15, Int((y / hourHeight * 60 / 15).rounded()) * 15))
+        return clock.cal.date(byAdding: .minute, value: minutes, to: clock.cal.startOfDay(for: day))!
+    }
+
+    /// Side-by-side columns for overlapping items: id → (column, columns in its overlap cluster).
+    static func columns(_ items: [(id: String, start: Date, end: Date)]) -> [String: (col: Int, of: Int)] {
+        var out: [String: (col: Int, of: Int)] = [:]
+        var cluster: [(id: String, col: Int)] = []
+        var colEnds: [Date] = []
+        var clusterEnd = Date.distantPast
+        func flush() {
+            for c in cluster { out[c.id] = (c.col, colEnds.count) }
+            cluster = []; colEnds = []
+        }
+        for item in items.sorted(by: { ($0.start, $0.end) < ($1.start, $1.end) }) {
+            if item.start >= clusterEnd { flush() }
+            let col = colEnds.firstIndex { $0 <= item.start } ?? colEnds.count
+            if col == colEnds.count { colEnds.append(item.end) } else { colEnds[col] = item.end }
+            cluster.append((item.id, col))
+            clusterEnd = max(clusterEnd, item.end)
+        }
+        flush()
+        return out
+    }
+
+    static func week(containing d: Date, clock: Clock) -> [Date] {
+        let start = clock.cal.dateInterval(of: .weekOfYear, for: d)?.start ?? clock.cal.startOfDay(for: d)
+        return (0..<7).map { clock.cal.date(byAdding: .day, value: $0, to: start)! }
+    }
+
+    /// Whole weeks covering the month of `d`.
+    static func month(containing d: Date, clock: Clock) -> [Date] {
+        guard let m = clock.cal.dateInterval(of: .month, for: d) else { return [] }
+        var day = week(containing: m.start, clock: clock)[0]
+        var out: [Date] = []
+        while day < m.end || out.count % 7 != 0 {
+            out.append(day)
+            day = clock.cal.date(byAdding: .day, value: 1, to: day)!
+        }
+        return out
+    }
+}

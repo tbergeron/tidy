@@ -12,6 +12,7 @@ struct Sidebar: View {
         (.completed, "Completed", "checkmark.circle.fill", .green),
         (.assigned, "Assigned to Me", "person.crop.circle.fill", .teal),
         (.urgent, "Urgent", "alarm.fill", .red),
+        (.calendar, "Calendar", "calendar.day.timeline.left", .blue),
     ]
 
     var body: some View {
