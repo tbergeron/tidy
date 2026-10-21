@@ -316,3 +316,86 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(RepeatPreset(r, due: allDay(22), clock: clock) == .custom)
     }
 }
+
+/// Wednesday 2026-10-21 10:00 (see `clock`).
+@Suite struct NaturalDateTests {
+    private func parse(_ s: String) -> NaturalDate.Detection? { NaturalDate.parse(s, clock: clock) }
+    private func due(_ s: String) -> Date? { parse(s)?.due.flatMap { Due.date($0, clock: clock) } }
+
+    @Test(arguments: [
+        ("Do dishes tonight", 21, 21, 0, "Do dishes"),
+        ("Call mom tomorrow", 22, 9, 0, "Call mom"),
+        ("Call mom tomorrow at 5pm", 22, 17, 0, "Call mom"),
+        ("Call mom tomorrow evening", 22, 18, 0, "Call mom"),
+        ("Gym this afternoon", 21, 15, 0, "Gym"),
+        ("Pay rent next week", 28, 9, 0, "Pay rent"),
+        ("Buy gift friday", 23, 9, 0, "Buy gift"),
+        ("Dentist on Monday at 3:30pm", 26, 15, 30, "Dentist"),
+        ("Report day after tomorrow", 23, 9, 0, "Report"),
+        ("Clean garage this weekend", 24, 9, 0, "Clean garage"),
+        ("Call bank at 4", 21, 16, 0, "Call bank"),
+        ("Standup at 9:15am", 22, 9, 15, "Standup"),       // 9:15 already past today → tomorrow
+        ("Lunch at noon", 21, 12, 0, "Lunch"),
+    ])
+    func relativeDays(text: String, day: Int, hour: Int, minute: Int, title: String) throws {
+        let d = try #require(parse(text))
+        #expect(Due.date(try #require(d.due), clock: clock) == at(day, hour, minute))
+        #expect(d.cleanedTitle == title)
+        #expect(d.recurrence == nil)
+    }
+
+    @Test func inDurations() {
+        #expect(due("Check oven in 20 minutes") == clock.now.addingTimeInterval(20 * 60))
+        #expect(due("Call back in an hour") == clock.now.addingTimeInterval(3600))
+        #expect(due("Stretch in half an hour") == clock.now.addingTimeInterval(1800))
+        #expect(due("Follow up in 3 days") == at(24, 9))
+        #expect(due("Follow up in a couple of weeks") == at(4, 9, month: 11))
+        #expect(due("Renew passport in a month") == at(21, 9, month: 11))
+        #expect(due("Review in a year") == clock.cal.date(from: DateComponents(year: 2027, month: 10, day: 21, hour: 9)))
+        #expect(due("Ship it 2 weeks from now") == at(4, 9, month: 11))
+    }
+
+    @Test func absoluteDates() {
+        #expect(due("Party oct 28") == at(28, 9))
+        #expect(due("Party October 28th at 7pm") == at(28, 19))
+        #expect(due("Party 28 oct") == at(28, 9))
+        #expect(due("Party 10/28") == at(28, 9))
+        #expect(due("Taxes april 15") == clock.cal.date(from: DateComponents(year: 2027, month: 4, day: 15, hour: 9)))   // past → next year
+        #expect(due("Rent on the 1st") == at(1, 9, month: 11))
+    }
+
+    @Test func todayIsAllDay() throws {
+        let d = try #require(parse("Groceries today"))
+        #expect(d.due.map(Due.isAllDay) == true && d.cleanedTitle == "Groceries")
+        #expect(due("Groceries today at 6pm") == at(21, 18))
+    }
+
+    @Test func repeats() throws {
+        let daily = try #require(parse("Take vitamins every day"))
+        #expect(daily.recurrence == Recurrence(frequency: .daily) && daily.cleanedTitle == "Take vitamins")
+        #expect(parse("Water plants every 2 days")?.recurrence == Recurrence(frequency: .daily, interval: 2))
+        #expect(parse("Laundry every other week")?.recurrence == Recurrence(frequency: .weekly, interval: 2))
+        #expect(parse("Pay rent monthly")?.recurrence == Recurrence(frequency: .monthly))
+        #expect(parse("Birthday every year")?.recurrence == Recurrence(frequency: .yearly))
+        #expect(parse("Gym every monday and thursday")?.recurrence == Recurrence(frequency: .weekly, weekdays: [.init(day: 2), .init(day: 5)]))
+        #expect(parse("Standup every weekday")?.recurrence == Recurrence(frequency: .weekly, weekdays: (2...6).map { .init(day: $0) }))
+        let hourly = try #require(parse("Drink water every hour"))
+        #expect(hourly.hourly && hourly.recurrence == nil)
+    }
+
+    @Test func repeatFirstDue() {
+        #expect(due("Meditate every morning") == at(22, 9))          // 9:00 already past today
+        #expect(due("Journal every night") == at(21, 21))
+        #expect(due("Run every day at 6pm") == at(21, 18))
+        #expect(due("Gym every monday at 7am") == at(26, 7))
+    }
+
+    @Test func highlightsAndNoFalsePositives() throws {
+        let d = try #require(parse("Do dishes tonight"))
+        #expect(d.ranges == [NSRange(location: 10, length: 7)])
+        #expect(parse("Buy 2 apples") == nil)
+        #expect(parse("Morning run") == nil)
+        #expect(parse("Read Dayton report") == nil)
+        #expect(parse("Pay may invoice") == nil)
+    }
+}

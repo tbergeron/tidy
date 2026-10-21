@@ -721,7 +721,14 @@ final class Store {
     func flushDraft() {
         guard let d = draft else { return }
         draft = nil
-        create(title: d.text, listID: d.listID, due: d.due, undo: NSApp.keyWindow?.undoManager)
+        createParsed(d.text, listID: d.listID, due: d.due, undo: NSApp.keyWindow?.undoManager)
+    }
+
+    /// Creates from typed text, taking a date/repeat written in it ("Do dishes tonight") out of the title.
+    func createParsed(_ text: String, listID: String?, due: DateComponents?, undo um: UndoManager?) {
+        let d = NaturalDate.parse(text, clock: clock)
+        let title = (d.map { $0.cleanedTitle.isEmpty ? text : $0.cleanedTitle } ?? text).trimmingCharacters(in: .whitespacesAndNewlines)
+        create(ReminderEdit(title: title, due: .some(d?.due ?? due), recurrence: d?.recurrence.map { .some($0) }), listID: listID, undo: um)
     }
 
     /// Quit: commit the open card and draft, finish queued ops, flush pending deletes.

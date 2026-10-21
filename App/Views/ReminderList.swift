@@ -364,30 +364,30 @@ struct CheckBox: View {
 private struct DraftRow: View {
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
-    @FocusState private var focused: Bool
 
     var body: some View {
-        @Bindable var store = store
+        let text = store.draft?.text ?? ""
+        let detection = NaturalDate.parse(text, clock: store.clock)
         HStack(spacing: 8) {
             CheckBox(done: false) {}.disabled(true)
-            TextField("New Reminder", text: Binding(get: { store.draft?.text ?? "" }, set: { store.draft?.text = $0 }))
-                .textFieldStyle(.plain)
-                .focused($focused)
-                .onSubmit { commit(keepGoing: true) }
-                .onExitCommand { commit(keepGoing: false) }
+            HighlightField(text: Binding(get: { store.draft?.text ?? "" }, set: { store.draft?.text = $0 }),
+                           placeholder: "New Reminder", font: .systemFont(ofSize: NSFont.systemFontSize),
+                           highlights: detection?.ranges ?? [], focusOnAppear: true,
+                           onSubmit: { commit(keepGoing: true) }, onEscape: { commit(keepGoing: false) },
+                           onEndEditing: { commit(keepGoing: false) })
+            if let detection {
+                DetectionChip(detection: detection, clock: store.clock) {}.fixedSize()
+            }
         }
         .padding(.vertical, 4)
-        .onAppear { focused = true }
-        .onChange(of: focused) { _, f in if !f { commit(keepGoing: false) } }
     }
 
     private func commit(keepGoing: Bool) {
         guard let d = store.draft else { return }
         if !d.text.trimmingCharacters(in: .whitespaces).isEmpty {
-            store.create(title: d.text, listID: d.listID, due: d.due, undo: um)
+            store.createParsed(d.text, listID: d.listID, due: d.due, undo: um)
         }
         store.draft = keepGoing && !d.text.isEmpty ? Store.Draft(listID: d.listID, due: d.due) : nil
-        if keepGoing && store.draft != nil { focused = true }
     }
 }
 

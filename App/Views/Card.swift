@@ -19,6 +19,10 @@ struct CardView: View {
     /// The reminder as it was when the card opened; Esc restores it (edits are saved as you go).
     private let original: Reminder
     @State private var discarded = false
+    /// Date/repeat typed in the title ("tonight", "every day"…), applied to the draft; nil when none.
+    @State private var detection: NaturalDate.Detection?
+    @State private var ignoredKey: String?
+    @State private var beforeDetection: (due: DateComponents?, recurrence: Recurrence?)?
 
     init(reminder: Reminder) {
         _base = State(initialValue: reminder)
@@ -44,11 +48,13 @@ struct CardView: View {
                     store.toggleComplete([draft.id], undo: um)
                 }
                 .disabled(isNew)
-                TextField("New Reminder", text: $draft.title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .semibold))
-                    .focused($focus, equals: .title)
-                    .onSubmit { focus = .notes }
+                HighlightField(text: $draft.title, placeholder: "New Reminder",
+                               font: .systemFont(ofSize: 15, weight: .semibold),
+                               highlights: detection?.ranges ?? [], focusOnAppear: true,
+                               onSubmit: { focus = .notes }, onEscape: cancel)
+            }
+            if let d = detection {
+                DetectionChip(detection: d, clock: store.clock) { ignoreDetection() }.padding(.leading, 23)
             }
             TextField("Notes", text: Binding(get: { draft.notes ?? "" }, set: { draft.notes = $0 }), axis: .vertical)
                 .textFieldStyle(.plain)
@@ -115,7 +121,6 @@ struct CardView: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(.background).shadow(color: .black.opacity(0.12), radius: 6, y: 2))
         .padding(.vertical, 6)
         .onAppear {
-            focus = .title
             if isNew { store.composeFinisher = { finishNew() } } else { store.commitOpenCard = { commit() } }
             store.cancelOpenCard = { cancel() }
         }
@@ -131,6 +136,7 @@ struct CardView: View {
             }
         }
         .onExitCommand(perform: cancel)
+        .onChange(of: draft.title) { _, t in updateDetection(t) }
         .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
             guard !isNew else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -209,6 +215,8 @@ struct CardView: View {
     /// Completion stays as is (it's its own action, undoable with ⌘Z; a repeating one has already advanced).
     private func cancel() {
         if isNew { discarded = true; store.composing = nil; return }
+        detection = nil
+        beforeDetection = nil
         var restore = original
         restore.isCompleted = draft.isCompleted
         restore.completionDate = draft.completionDate
@@ -224,17 +232,54 @@ struct CardView: View {
 
     private func finishNew() {
         guard !discarded else { return }
-        store.finishCompose(draft, undo: um)
+        store.finishCompose(outgoing, undo: um)
+    }
+
+    /// What gets saved: the draft, with the detected date words taken out of the title.
+    private var outgoing: Reminder {
+        var o = draft
+        if let d = detection, !d.cleanedTitle.isEmpty { o.title = d.cleanedTitle }
+        return o
     }
 
     private func commit() {
         guard !isNew, !locked, store.snap.reminders[base.id] != nil else { return }
         let id = base.id
-        store.commitCard(draft: draft, base: base, undo: um) {
+        let out = outgoing
+        store.commitCard(draft: out, base: base, undo: um) {
             // Failed: fall back to what's stored, so the user's text is retried on the next commit.
             if let stored = store.snap.reminders[id] { base = stored; draft.listID = stored.listID }
         }
-        base = draft
+        base = out   // the field keeps the typed words; the saved title is clean
+    }
+
+    /// Parse the title as it's typed; apply what's found, and put back the previous values when it's gone.
+    /// Only after the user changes the title, so opening "Watch tonight show" doesn't reschedule it.
+    private func updateDetection(_ title: String) {
+        guard isNew || title != original.title else { detection = nil; beforeDetection = nil; return }
+        var d = NaturalDate.parse(title, clock: store.clock)
+        if d?.key == ignoredKey { d = nil }
+        let changed = d?.key != detection?.key || d?.due != detection?.due || d?.recurrence != detection?.recurrence
+        if changed {
+            if detection == nil, d != nil { beforeDetection = (draft.due, draft.recurrence) }
+            if let d {
+                if let due = d.due { draft.due = due }
+                draft.recurrence = d.recurrence ?? beforeDetection?.recurrence
+            } else if let b = beforeDetection {
+                draft.due = b.due
+                draft.recurrence = b.recurrence
+                beforeDetection = nil
+            }
+        }
+        detection = d
+    }
+
+    private func ignoreDetection() {
+        guard let d = detection else { return }
+        ignoredKey = d.key
+        if let b = beforeDetection { draft.due = b.due; draft.recurrence = b.recurrence }
+        beforeDetection = nil
+        detection = nil
     }
 }
 
