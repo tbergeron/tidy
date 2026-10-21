@@ -4,27 +4,26 @@ struct Sidebar: View {
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
 
-    private static let smart: [(Destination, String, String, Color)] = [
-        (.today, "Today", "star.fill", .yellow),
-        (.scheduled, "Scheduled", "calendar", .red),
-        (.all, "All", "tray.fill", .gray),
-        (.flagged, "Flagged", "flag.fill", .orange),
-        (.completed, "Completed", "checkmark.circle.fill", .green),
-        (.assigned, "Assigned to Me", "person.crop.circle.fill", .teal),
-        (.urgent, "Urgent", "alarm.fill", .red),
+    private static let style: [Destination: (String, Color)] = [
+        .today: ("star.fill", .yellow), .scheduled: ("calendar", .red), .all: ("tray.fill", .gray),
+        .flagged: ("flag.fill", .orange), .completed: ("checkmark.circle.fill", .green),
+        .assigned: ("person.crop.circle.fill", .teal), .urgent: ("alarm.fill", .red),
     ]
 
     var body: some View {
         let selection = Binding<Destination?>(get: { store.destination }, set: { if let d = $0 { store.destination = d } })
         List(selection: selection) {
             Section {
-                ForEach(Self.smart.filter { store.isAvailable($0.0) && !store.hiddenSmartLists.contains($0.1) }, id: \.0) { d, title, icon, color in
+                let smart = store.orderedSmart.filter { store.isAvailable($0) && !store.hiddenSmartLists.contains(store.title($0)) }
+                ForEach(smart, id: \.self) { d in
+                    let title = store.title(d), (icon, color) = Self.style[d] ?? ("list.bullet", .gray)
                     Label { Text(title) } icon: { Image(systemName: icon).foregroundStyle(color) }
                         .badge(store.count(d) ?? 0)
                         .tag(d)
                         .dropDestination(for: DragItems.self) { items, _ -> Bool in drop(items, on: d) }
                         .contextMenu { Button("Hide “\(title)”") { store.hiddenSmartLists.insert(title) } }
                 }
+                .onMove { from, to in store.reorder(smart.map(store.title), from: from, to: to, in: &store.smartOrder) }
                 if !store.hiddenSmartLists.isEmpty {
                     Menu("Show Hidden") {
                         ForEach(store.hiddenSmartLists.sorted(), id: \.self) { t in Button(t) { store.hiddenSmartLists.remove(t) } }
@@ -40,13 +39,15 @@ struct Sidebar: View {
             ForEach(store.sidebarAccounts) { acc in
                 Section(store.sidebarAccounts.count > 1 ? acc.account.title : "Lists") {
                     // Pinned lists already appear in the Pinned section.
-                    ForEach(acc.entries.filter { if case .list(let l) = $0 { !(store.bridgeReadable && l.isPinned) } else { true } }) { entry in
+                    let entries = acc.entries.filter { if case .list(let l) = $0 { !(store.bridgeReadable && l.isPinned) } else { true } }
+                    ForEach(entries) { entry in
                         switch entry {
                         case .list(let l):
                             ListRow(list: l)
                         case .group(let g, let lists):
                             DisclosureGroup(isExpanded: expanded(g.id)) {
                                 ForEach(lists) { ListRow(list: $0) }
+                                    .onMove { from, to in store.reorder(lists.map(\.id), from: from, to: to, in: &store.sidebarOrder) }
                             } label: {
                                 Label(g.name, systemImage: "folder").fontWeight(.semibold)
                                     .badge(store.count(.group(g.id)) ?? 0)
@@ -54,6 +55,7 @@ struct Sidebar: View {
                             }
                         }
                     }
+                    .onMove { from, to in store.reorder(entries.map(\.id), from: from, to: to, in: &store.sidebarOrder) }
                 }
             }
 

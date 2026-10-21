@@ -67,6 +67,30 @@ final class Store {
             if case .list(let id) = destination, hiddenLists.contains(id) { destination = .today }
         }
     }
+    /// Sidebar order chosen by dragging (app-local): smart-list titles, and list/group IDs.
+    var smartOrder = UserDefaults.standard.stringArray(forKey: "smartOrder") ?? [] {
+        didSet { UserDefaults.standard.set(smartOrder, forKey: "smartOrder") }
+    }
+    var sidebarOrder = UserDefaults.standard.stringArray(forKey: "sidebarOrder") ?? [] {
+        didSet { UserDefaults.standard.set(sidebarOrder, forKey: "sidebarOrder") }
+    }
+
+    static let smartDestinations: [Destination] = [.today, .scheduled, .all, .flagged, .completed, .assigned, .urgent]
+
+    /// Smart lists in the user's order (unknown ones keep their default place at the end).
+    var orderedSmart: [Destination] {
+        Self.smartDestinations.enumerated().sorted { a, b in
+            (smartOrder.firstIndex(of: title(a.element)) ?? 100 + a.offset) < (smartOrder.firstIndex(of: title(b.element)) ?? 100 + b.offset)
+        }.map(\.element)
+    }
+
+    /// Drag-reorder within the visible items; hidden / filtered-out ones keep their relative place after them.
+    func reorder(_ visible: [String], from: IndexSet, to: Int, in order: inout [String]) {
+        var moved = visible
+        moved.move(fromOffsets: from, toOffset: to)
+        order = moved + order.filter { !moved.contains($0) }
+    }
+
     var hiddenSmartLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenSmartLists") ?? []) {
         didSet { UserDefaults.standard.set(Array(hiddenSmartLists), forKey: "hiddenSmartLists") }
     }
@@ -238,21 +262,21 @@ final class Store {
             guard !lists.isEmpty else { return nil }
             let groups = snap.groups.filter { $0.accountID == a.id }
             var entries: [SidebarEntry] = lists.filter { l in l.groupID == nil || !groups.contains { $0.id == l.groupID } }.map { .list($0) }
-            entries += groups.map { g in .group(g, lists.filter { $0.groupID == g.id }.sorted(by: Self.titleOrder)) }
-            let order = Dictionary(a.listOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
-            entries.sort {
-                switch (order[$0.id], order[$1.id]) {
-                case let (x?, y?): return x < y
-                case (.some, nil): return true
-                case (nil, .some): return false
-                case (nil, nil): return Self.entryTitle($0).localizedStandardCompare(Self.entryTitle($1)) == .orderedAscending
-                }
+            // Order: the user's drag order, then Reminders' own sidebar order, then title.
+            let mine = Dictionary(sidebarOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
+            let theirs = Dictionary(a.listOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
+            func before(_ x: String, _ xt: String, _ y: String, _ yt: String) -> Bool {
+                let kx = (mine[x] ?? Int.max, theirs[x] ?? Int.max), ky = (mine[y] ?? Int.max, theirs[y] ?? Int.max)
+                return kx != ky ? kx < ky : xt.localizedStandardCompare(yt) == .orderedAscending
             }
+            entries += groups.map { g in
+                .group(g, lists.filter { $0.groupID == g.id }.sorted { before($0.id, $0.title, $1.id, $1.title) })
+            }
+            entries.sort { before($0.id, Self.entryTitle($0), $1.id, Self.entryTitle($1)) }
             return SidebarAccount(account: a, entries: entries)
         }
     }
     private static func entryTitle(_ e: SidebarEntry) -> String { switch e { case .list(let l): l.title; case .group(let g, _): g.name } }
-    private static func titleOrder(_ a: RList, _ b: RList) -> Bool { a.title.localizedStandardCompare(b.title) == .orderedAscending }
 
     var pinnedLists: [RList] { bridgeReadable ? snap.lists.filter { $0.isPinned && !hiddenLists.contains($0.id) } : [] }
 
@@ -789,8 +813,7 @@ final class Store {
 
     /// ⌘1…9: visible smart lists, then pinned lists (Reminders maps ⌘1…9 to pinned items).
     var shortcutDestinations: [Destination] {
-        let smart: [Destination] = [.today, .scheduled, .all, .flagged, .completed, .assigned, .urgent]
-        return smart.filter { isAvailable($0) && !hiddenSmartLists.contains(title($0)) } + pinnedLists.map { .list($0.id) }
+        return orderedSmart.filter { isAvailable($0) && !hiddenSmartLists.contains(title($0)) } + pinnedLists.map { .list($0.id) }
     }
 
     // MARK: List ops
