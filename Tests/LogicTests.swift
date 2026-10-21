@@ -453,8 +453,8 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
 
 
 @MainActor @Suite struct SectionFilterTests {
-    /// The filter (search, or a tag only the subtask has) hides the parent but keeps the subtask.
-    @Test(arguments: [true, false]) func subtaskKeepsParentSectionWhenFilterHidesParent(bySearch: Bool) {
+    /// A tag only the subtask has hides the parent but keeps the subtask.
+    @Test func subtaskKeepsParentSectionWhenFilterHidesParent() {
         let s = Store()
         var snap = Snapshot()
         snap.lists = [RList(id: "L", title: "L", color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)]
@@ -465,10 +465,25 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         snap.sectionOf = ["P": "S1"]   // only the parent's membership is fetched
         s.snap = snap
         s.destination = .list("L")
-        if bySearch { s.search = "milk" } else { s.tagFilter = ["dairy"] }
+        s.tagFilter = ["dairy"]
         let sections = s.sections(.list("L"))
         #expect(sections.first { $0.id == "S1" }?.rows.map(\.id) == ["C"])
         #expect(sections.first { $0.title.isEmpty }?.rows.isEmpty != false)
+    }
+
+    @Test func searchLooksThroughEveryList() {
+        let s = Store()
+        var snap = Snapshot()
+        snap.lists = ["L", "M"].map { RList(id: $0, title: $0, color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false) }
+        var here = reminder("H"); here.title = "Buy milk"
+        var there = reminder("T"); there.title = "Milk the cow"; there.listID = "M"
+        var other = reminder("O"); other.title = "Walk"
+        snap.reminders = ["H": here, "T": there, "O": other]
+        snap.accounts = [Account(id: "A", title: "A")]
+        s.snap = snap
+        s.destination = .list("L")
+        s.search = "milk"
+        #expect(Set(s.sections(.list("L")).flatMap(\.rows).map(\.id)) == ["H", "T"])
         s.search = ""
     }
 }

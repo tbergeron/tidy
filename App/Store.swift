@@ -487,6 +487,7 @@ final class Store {
     }
 
     func sections(_ d: Destination) -> [RowSection] {
+        let d = search.isEmpty ? d : .all   // search looks through every list, results grouped by list
         var rs = candidates(d, includeCompleted: false)
         if !search.isEmpty { rs = rs.filter { Display.matches($0, query: search, listTitle: list($0.listID)?.title ?? "") } }
         if !tagFilter.isEmpty {
