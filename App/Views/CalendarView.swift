@@ -4,18 +4,13 @@ import SwiftUI
 struct CalendarView: View {
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
-    @AppStorage("calendarMode") private var mode = Mode.week
-    @AppStorage("calendarTray") private var showTray = true
+    @State private var mode = Mode.week
 
     enum Mode: String, CaseIterable { case day = "Day", week = "Week", month = "Month" }
 
     var body: some View {
         @Bindable var store = store
-        HStack(spacing: 0) {
-            if showTray {
-                NoDateTray().frame(width: 210)
-                Divider()
-            }
+        Group {
             switch mode {
             case .day: TimeGrid(days: [store.clock.cal.startOfDay(for: store.calendarAnchor)])
             case .week: TimeGrid(days: CalendarLayout.week(containing: store.calendarAnchor, clock: store.clock))
@@ -36,8 +31,9 @@ struct CalendarView: View {
                     .pickerStyle(.segmented)
             }
             ToolbarItemGroup {
-                Toggle(isOn: $showTray) { Label("No Date", systemImage: "tray") }.help("Reminders without a date")
-                if store.eventAuth != .fullAccess {
+                if store.eventAuth == .fullAccess {
+                    CalendarsMenu()
+                } else {
                     Button { Task { await store.requestEventAccess() } } label: { Label("Show Events", systemImage: "calendar.badge.plus") }
                         .help("Show Calendar events (read-only)")
                 }
@@ -82,7 +78,7 @@ private struct TimeGrid: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Color.clear.frame(width: Self.gutter)
+                Color.clear.frame(width: Self.gutter, height: 1)   // Color.clear is height-flexible otherwise
                 ForEach(days, id: \.self) { d in
                     let isToday = store.clock.cal.isDate(d, inSameDayAs: store.clock.now)
                     VStack(spacing: 0) {
@@ -318,23 +314,31 @@ private struct EventBlock: View {
     }
 }
 
-/// Undated reminders to drag onto the calendar.
-private struct NoDateTray: View {
+/// Which event calendars appear (per account, like Calendar.app's list).
+private struct CalendarsMenu: View {
     @Environment(Store.self) private var store
 
     var body: some View {
-        List {
-            Section("No Date") {
-                ForEach(store.live.filter { $0.due == nil && !$0.isCompleted }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }) { r in
-                    HStack(spacing: 6) {
-                        Circle().fill(store.list(r.listID).map { Color($0.color) } ?? .secondary).frame(width: 6, height: 6)
-                        Text(r.title).lineLimit(1)
+        Menu {
+            let groups = Dictionary(grouping: store.snap.eventCalendars, by: \.account)
+            ForEach(groups.keys.sorted(), id: \.self) { account in
+                Section(account) {
+                    ForEach(groups[account] ?? []) { c in
+                        Toggle(isOn: Binding(
+                            get: { !store.hiddenEventCalendars.contains(c.id) },
+                            set: { if $0 { store.hiddenEventCalendars.remove(c.id) } else { store.hiddenEventCalendars.insert(c.id) } })
+                        ) {
+                            Label { Text(c.title) } icon: { Image(systemName: "circle.fill").foregroundStyle(Color(c.color)) }
+                        }
                     }
-                    .draggable(DragItems(reminderIDs: [r.id]))
-                    .onTapGesture { store.selection = [r.id]; store.editingID = r.id }
                 }
             }
+            Divider()
+            Button("Show All") { store.hiddenEventCalendars = [] }
+            Button("Hide All") { store.hiddenEventCalendars = Set(store.snap.eventCalendars.map(\.id)) }
+        } label: {
+            Label("Calendars", systemImage: "calendar.badge.checkmark")
         }
-        .listStyle(.sidebar)
+        .help("Choose which calendars to show")
     }
 }

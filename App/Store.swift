@@ -72,6 +72,10 @@ final class Store {
         didSet { UserDefaults.standard.set(badgeMode.rawValue, forKey: "badgeMode"); updateBadge() }
     }
     var calendarAnchor = Date()
+    /// Event calendars hidden from the Calendar view (app-local).
+    var hiddenEventCalendars = Set(UserDefaults.standard.stringArray(forKey: "hiddenEventCalendars") ?? []) {
+        didSet { UserDefaults.standard.set(Array(hiddenEventCalendars), forKey: "hiddenEventCalendars") }
+    }
 
     struct Draft: Equatable { var listID: String?; var due: DateComponents?; var text = "" }
 
@@ -205,7 +209,7 @@ final class Store {
     func eventsOn(_ day: Date) -> [CalEvent] {
         let s = clock.cal.startOfDay(for: day)
         let e = clock.cal.date(byAdding: .day, value: 1, to: s) ?? s
-        return snap.events.filter { $0.start < e && $0.end > s }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
+        return snap.events.filter { $0.start < e && $0.end > s && !hiddenEventCalendars.contains($0.calendarID) }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
     }
     var bridgeReadable: Bool { bridgeEnabled && snap.bridge.readOK }
 

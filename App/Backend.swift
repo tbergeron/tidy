@@ -61,6 +61,10 @@ actor Backend {
 
         if let range, EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             snap.events = events(in: range)
+            snap.eventCalendars = ek.calendars(for: .event).map {
+                EventCalendar(id: $0.calendarIdentifier, title: $0.title, color: RGBA($0.cgColor), account: $0.source?.title ?? "")
+            }
+            .sorted { ($0.account, $0.title) < ($1.account, $1.title) }
         }
         return snap
     }
@@ -341,6 +345,7 @@ actor Backend {
         return ek.events(matching: p).map {
             CalEvent(id: ($0.eventIdentifier ?? UUID().uuidString) + "@\($0.startDate.timeIntervalSince1970)",
                      title: $0.title ?? "", start: $0.startDate, end: $0.endDate, isAllDay: $0.isAllDay,
+                     calendarID: $0.calendar?.calendarIdentifier ?? "",
                      calendarTitle: $0.calendar?.title ?? "", color: RGBA($0.calendar?.cgColor))
         }
     }
