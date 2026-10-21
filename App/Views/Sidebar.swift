@@ -24,12 +24,6 @@ struct Sidebar: View {
                         .contextMenu { Button("Hide “\(title)”") { store.hiddenSmartLists.insert(title) } }
                 }
                 .onMove { from, to in store.reorder(smart.map(store.title), from: from, to: to, in: &store.smartOrder) }
-                if !store.hiddenSmartLists.isEmpty {
-                    Menu("Show Hidden") {
-                        ForEach(store.hiddenSmartLists.sorted(), id: \.self) { t in Button(t) { store.hiddenSmartLists.remove(t) } }
-                    }
-                    .menuStyle(.borderlessButton).foregroundStyle(.secondary).font(.caption)
-                }
             }
 
             if !store.pinnedLists.isEmpty {

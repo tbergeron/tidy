@@ -125,3 +125,38 @@ struct DetectionChip: View {
             .compactMap { $0 }.joined(separator: " · ")
     }
 }
+
+extension Notification.Name { static let tidyFocusSearch = Notification.Name("tidyFocusSearch") }
+
+/// Native search field (fixed width in the toolbar; ⌘F focuses it, Esc clears it).
+struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let f = NSSearchField()
+        f.placeholderString = "Search"
+        f.delegate = context.coordinator
+        f.sendsSearchStringImmediately = true
+        context.coordinator.observer = NotificationCenter.default.addObserver(forName: .tidyFocusSearch, object: nil, queue: .main) { [weak f] _ in
+            MainActor.assumeIsolated { _ = f?.window?.makeFirstResponder(f) }
+        }
+        return f
+    }
+
+    func updateNSView(_ f: NSSearchField, context: Context) {
+        context.coordinator.parent = self
+        if f.stringValue != text { f.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var parent: SearchField
+        var observer: NSObjectProtocol?
+        init(_ parent: SearchField) { self.parent = parent }
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+        func controlTextDidChange(_ note: Notification) {
+            if let f = note.object as? NSSearchField { parent.text = f.stringValue }
+        }
+    }
+}

@@ -31,7 +31,6 @@ struct MainView: View {
         } detail: {
             ReminderListView(destination: store.destination)
         }
-        .searchable(text: $store.search, placement: .toolbar, prompt: "Search")
         .overlay(alignment: .bottom) { BannerView() }
         .sheet(isPresented: $store.showNewList) { ListEditor(list: nil) }
         .sheet(item: $store.listToEdit) { ListEditor(list: $0) }

@@ -101,6 +101,9 @@ struct ReminderListView: View {
                     ViewOptions(destination: destination)
                 } label: { Label("View", systemImage: "ellipsis.circle") }
             }
+            ToolbarItem {
+                SearchField(text: $store.search).frame(width: 180)
+            }
         }
         .navigationTitle(store.title(destination))
     }
@@ -483,6 +486,13 @@ private struct ViewOptions: View {
     var body: some View {
         @Bindable var store = store
         if destination == .today { Toggle("Group by Time", isOn: $store.groupByTime) }
+        Menu("Smart Lists") {
+            ForEach(Store.smartDestinations.filter(store.isAvailable), id: \.self) { d in
+                let t = store.title(d)
+                Toggle(t, isOn: Binding(get: { !store.hiddenSmartLists.contains(t) },
+                                        set: { if $0 { store.hiddenSmartLists.remove(t) } else { store.hiddenSmartLists.insert(t) } }))
+            }
+        }
         Menu("Lists") {
             ForEach(store.snap.lists.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }) { l in
                 Toggle(l.title, isOn: Binding(get: { !store.hiddenLists.contains(l.id) },

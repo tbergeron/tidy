@@ -44,6 +44,9 @@ struct AppCommands: Commands {
             Button("New Reminder") { store.startCompose() }.keyboardShortcut("n")
             Button("New List…") { store.showNewList = true }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
+        CommandGroup(after: .textEditing) {
+            Button("Find…") { NotificationCenter.default.post(name: .tidyFocusSearch, object: nil) }.keyboardShortcut("f")
+        }
         CommandMenu("Reminder") {
             Button("Show Info") { store.editingID = store.selection.first }.keyboardShortcut("i").disabled(store.selection.count != 1)
             Button("Mark as Completed") { store.toggleComplete(ids, undo: um) }.keyboardShortcut("c", modifiers: [.command, .shift]).disabled(none)
