@@ -160,6 +160,9 @@ private struct ListHeader: View {
                 }
             }
             .padding(.vertical, 4)
+        } else {
+            // Keeps the first section header in the list at rest; headers only pin to the top once you scroll.
+            Color.clear.frame(height: 14)
         }
     }
 }
