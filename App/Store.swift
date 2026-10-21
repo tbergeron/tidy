@@ -213,19 +213,35 @@ final class Store {
         await loop.value
     }
 
-    /// Re-reads one list's sections (opening a list) without reloading everything.
+    /// Re-reads one list's sections when it's opened (they're already shown from the last fetch).
     private func refreshSections(_ listID: String) {
         guard bridgeReadable else { return }
-        let ids = Backend.needsSection(live.filter { $0.listID == listID })
-        Task {
-            guard let r = await backend.sections(inList: listID, reminderIDs: ids), viewedListID == listID else { return }
-            var s = snap   // one publish, and no index rebuild: sections don't change counts or lookups
-            s.sections[listID] = r.sections
-            s.sectionOf = r.sectionOf
-            sectionsOnlyChange = true
-            snap = s
-            sectionsOnlyChange = false
+        Task { await fetchSections([listID]) }
+    }
+
+    @ObservationIgnored private var sectionsTask: Task<Void, Never>?
+
+    /// Sections of the given lists, one actor call per list so writes can run in between, published once
+    /// with no index rebuild (sections don't change counts or lookups).
+    private func fetchSections(_ listIDs: [String]) async {
+        let t = ContinuousClock.now
+        let byList = Dictionary(grouping: live, by: \.listID)
+        var sections: [String: [RSection]] = [:], of: [String: String] = [:]
+        for id in listIDs {
+            guard !Task.isCancelled else { return }
+            guard let r = await backend.sections(inList: id, reminderIDs: Backend.needsSection(byList[id] ?? [])) else { continue }
+            sections[id] = r.sections
+            of.merge(r.sectionOf) { _, b in b }
         }
+        guard !sections.isEmpty, !Task.isCancelled else { return }
+        perfLog.notice("sections for \(listIDs.count) lists: \(perfMS(t), privacy: .public)")
+        var s = snap
+        s.sectionOf = s.sectionOf.filter { k, _ in s.reminders[k].map { sections[$0.listID] == nil } ?? false }
+            .merging(of) { _, b in b }
+        s.sections.merge(sections) { _, b in b }
+        sectionsOnlyChange = true
+        snap = s
+        sectionsOnlyChange = false
     }
 
     private func loadOnce() async {
@@ -233,12 +249,24 @@ final class Store {
         perfLog.debug("reload begins: \(perfMS(self.launched), privacy: .public) after Store init")
         let since = clock.cal.date(byAdding: .day, value: -completedWindowDays, to: clock.today) ?? .distantPast
         do {
-            snap = try await backend.load(completedSince: since, sectionsFor: viewedListID,
-                                          useBridge: bridgeEnabled)
+            var fresh = try await backend.load(completedSince: since, useBridge: bridgeEnabled)
+            if fresh.bridge.readOK {   // keep showing the last sections until the refresh below replaces them
+                fresh.sections = snap.sections
+                fresh.sectionOf = snap.sectionOf
+            }
+            snap = fresh
             perfLog.notice("reload: \(perfMS(t), privacy: .public); since launch: \(perfMS(self.launched), privacy: .public)")
             loaded = true
-            let saved = snap
-            Task.detached(priority: .utility) { SnapshotCache.save(saved) }
+            // Every list's sections in the background (viewed list first), so opening a list shows its headers
+            // at once; the cache is saved after, so the next launch has them too.
+            sectionsTask?.cancel()
+            let lists = snap.lists.map(\.id).sorted { $0 == viewedListID && $1 != viewedListID }
+            sectionsTask = Task {
+                if bridgeReadable { await fetchSections(lists) }
+                guard !Task.isCancelled else { return }
+                let saved = snap
+                Task.detached(priority: .utility) { SnapshotCache.save(saved) }
+            }
             switch destination {   // the viewed list/group was deleted elsewhere
             case .list(let id) where list(id) == nil, .group(let id) where !snap.groups.contains(where: { $0.id == id }):
                 destination = .today

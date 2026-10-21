@@ -101,7 +101,7 @@ struct IntegrationTests {
     @Test func bridgeReadsOwnReminders() async throws {
         try await withList { list in
             let r = try await backend.create(ReminderEdit(title: "bridged"), listID: list)
-            let snap = try await backend.load(completedSince: Date().addingTimeInterval(-86400), sectionsFor: list, useBridge: true)
+            let snap = try await backend.load(completedSince: Date().addingTimeInterval(-86400), useBridge: true)
             print("bridge report: \(snap.bridge.report)")
             #expect(snap.bridge.readOK)
             #expect(snap.reminders[r.id]?.extras != nil)

@@ -46,7 +46,7 @@ actor Backend {
 
     // MARK: Load
 
-    func load(completedSince: Date, sectionsFor listID: String?, useBridge: Bool) throws -> Snapshot {
+    func load(completedSince: Date, useBridge: Bool) throws -> Snapshot {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { throw AppError.notAuthorized }
         var snap = Snapshot(completedSince: completedSince)
         var t = ContinuousClock.now
@@ -70,7 +70,7 @@ actor Backend {
         perfLog.debug("fetch: \(perfMS(t), privacy: .public) (\(fetched[0].count) open, \(fetched[1].count) completed)"); t = .now
         for r in fetched.joined() { snap.reminders[r.id] = r }
 
-        if useBridge { mergeBridge(into: &snap, sectionsFor: listID) }
+        if useBridge { mergeBridge(into: &snap) }
         perfLog.notice("bridge: \(perfMS(t), privacy: .public)")
         snap.bridge.report = bridgeReport + snap.bridge.report
 
@@ -137,7 +137,7 @@ actor Backend {
 
     // MARK: Private bridge (reads)
 
-    private func mergeBridge(into snap: inout Snapshot, sectionsFor listID: String?) {
+    private func mergeBridge(into snap: inout Snapshot) {
         if !bridgeTried {
             bridgeTried = true
             let report = NSMutableArray()
@@ -178,15 +178,7 @@ actor Backend {
                     snap.reminders[info.identifier]?.extras = Self.extras(info)
                 }
             }
-            perfLog.debug("  bridge reminders: \(perfMS(t), privacy: .public)"); t = .now
-            if let listID {
-                snap.sections[listID] = try bridge.sections(inList: listID).map { RSection(id: $0.identifier, name: $0.name) }
-                if snap.sections[listID]?.isEmpty == false {
-                    let inList = Self.needsSection(snap.reminders.values.filter { $0.listID == listID })
-                    snap.sectionOf = try bridge.sectionIDs(forReminders: inList)
-                }
-            }
-            perfLog.debug("  bridge sections: \(perfMS(t), privacy: .public)")
+            perfLog.debug("  bridge reminders: \(perfMS(t), privacy: .public)")
             snap.bridge.readOK = true
         } catch {
             snap.bridge.report.append("read failed: \(error.localizedDescription)")
@@ -326,7 +318,7 @@ actor Backend {
         return rs.filter { !$0.isCompleted && ($0.parentID.map { !ids.contains($0) } ?? true) }.map(\.id)
     }
 
-    /// Sections of one list (and which reminders are in them), for opening a list without a full reload.
+    /// Sections of one list (and which reminders are in them); Store fetches every list this way after a load.
     func sections(inList listID: String, reminderIDs: [String]) -> (sections: [RSection], sectionOf: [String: String])? {
         guard let bridge, let infos = try? bridge.sections(inList: listID) else { return nil }
         let sections = infos.map { RSection(id: $0.identifier, name: $0.name) }
