@@ -54,6 +54,7 @@ struct ReminderListView: View {
             }
         }
         .listStyle(.inset)
+        .environment(\.defaultMinListRowHeight, 1)   // lets the 1-pt top spacer row stay 1 pt
         .focused($listFocused)
         // Keep keyboard focus on the list so Return / Space / ⌫ work without clicking first.
         .onAppear { listFocused = true }
@@ -162,7 +163,7 @@ private struct ListHeader: View {
             .padding(.vertical, 4)
         } else {
             // Keeps the first section header in the list at rest; headers only pin to the top once you scroll.
-            Color.clear.frame(height: 14)
+            Color.clear.frame(height: 1).listRowInsets(EdgeInsets())
         }
     }
 }
