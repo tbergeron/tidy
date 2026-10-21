@@ -292,9 +292,17 @@ enum RepeatPreset: String, CaseIterable, Sendable {
         }
     }
 
-    init(_ r: Recurrence?) {
+    /// `due` lets a rule that spells out the due date's own weekday/day (as Reminders.app writes "Weekly")
+    /// still count as the plain preset.
+    init(_ r: Recurrence?, due: DateComponents? = nil, clock: Clock = .current) {
         guard var r else { self = .never; return }
         r.end = nil
+        if let d = due.flatMap({ Due.date($0, clock: clock) }) {
+            let c = clock.cal.dateComponents([.weekday, .day, .month], from: d)
+            if r.frequency == .weekly, r.weekdays == [.init(day: c.weekday ?? 0)] { r.weekdays = [] }
+            if r.frequency == .monthly || r.frequency == .yearly, r.monthDays == [c.day ?? 0], r.weekdays.isEmpty { r.monthDays = [] }
+            if r.frequency == .yearly, r.months == [c.month ?? 0] { r.months = [] }
+        }
         self = Self.allCases.first { $0.recurrence() == r } ?? .custom
     }
 }
@@ -339,15 +347,74 @@ enum RecurrenceMap {
             end: end)
     }
 
-    static func describe(_ r: Recurrence?, hourly: Bool = false) -> String? {
+    /// "Weekdays", "Every 2 days", "Every month on the last weekday", "Every week on Mon, Wed, 5 times"…
+    static func describe(_ r: Recurrence?, hourly: Bool = false, due: DateComponents? = nil, clock: Clock = .current) -> String? {
         if hourly { return "Hourly" }
         guard let r else { return nil }
-        let p = RepeatPreset(r)
-        if p != .custom {
-            return r.end == nil ? p.rawValue : "\(p.rawValue), until…"
+        let p = RepeatPreset(r, due: due, clock: clock)
+        var text = p == .custom || p == .never ? phrase(r, clock: clock) : p.rawValue
+        switch r.end {
+        case .date(let d): text += ", until " + d.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: clock.cal.timeZone))
+        case .count(let n): text += n == 1 ? ", once" : ", \(n) times"
+        case nil: break
         }
+        return text
+    }
+
+    static func phrase(_ r: Recurrence, clock: Clock) -> String {
         let unit = ["day", "week", "month", "year"][r.frequency.rawValue]
-        return r.interval == 1 ? "Every \(unit)" : "Every \(r.interval) \(unit)s"
+        var s = r.interval <= 1 ? "Every \(unit)" : "Every \(r.interval) \(unit)s"
+        switch r.frequency {
+        case .daily: break
+        case .weekly: if !r.weekdays.isEmpty { s += " on " + weekdayList(r.weekdays.map(\.day), clock: clock) }
+        case .monthly: s += onClause(r, clock: clock)
+        case .yearly:
+            if !r.months.isEmpty { s += " in " + r.months.sorted().map { clock.cal.shortMonthSymbols[$0 - 1] }.joined(separator: ", ") }
+            s += onClause(r, clock: clock)
+        }
+        return s
+    }
+
+    static let ordinals = [1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", -1: "last"]
+
+    private static func onClause(_ r: Recurrence, clock: Clock) -> String {
+        if !r.monthDays.isEmpty {
+            let f = NumberFormatter()
+            f.numberStyle = .ordinal
+            return " on the " + r.monthDays.sorted { ($0 < 0 ? 99 : $0) < ($1 < 0 ? 99 : $1) }
+                .map { $0 == -1 ? "last day" : (f.string(from: NSNumber(value: $0)) ?? "\($0)") }.joined(separator: ", ")
+        }
+        guard !r.weekdays.isEmpty else { return "" }
+        if let pos = r.setPositions.first {
+            return " on the \(ordinals[pos] ?? "\(pos)th") \(dayGroup(Set(r.weekdays.map(\.day)), clock: clock))"
+        }
+        if r.weekdays.count == 1, let w = r.weekdays.first, w.week != 0 {
+            return " on the \(ordinals[w.week] ?? "\(w.week)th") \(weekdayNames(clock)[w.day - 1])"
+        }
+        return " on " + weekdayList(r.weekdays.map(\.day), clock: clock)
+    }
+
+    /// "day", "weekday", "weekend day", or a weekday name.
+    static func dayGroup(_ days: Set<Int>, clock: Clock) -> String {
+        if days.count == 7 { return "day" }
+        if days == Set(2...6) { return "weekday" }
+        if days == [1, 7] { return "weekend day" }
+        return days.sorted().map { weekdayNames(clock)[$0 - 1] }.joined(separator: ", ")
+    }
+
+    /// Full weekday names ("Tuesday") in the user's language.
+    static func weekdayNames(_ clock: Clock) -> [String] {
+        let f = DateFormatter()
+        f.locale = .current
+        return f.weekdaySymbols
+    }
+
+    private static func weekdayList(_ days: [Int], clock: Clock) -> String {
+        let set = Set(days)
+        if set == Set(2...6) { return "weekdays" }
+        if set == [1, 7] { return "weekends" }
+        let order = (0..<7).map { (clock.cal.firstWeekday - 1 + $0) % 7 + 1 }
+        return order.filter(set.contains).map { clock.cal.shortWeekdaySymbols[$0 - 1] }.joined(separator: ", ")
     }
 }
 

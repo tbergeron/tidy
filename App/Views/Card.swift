@@ -8,7 +8,9 @@ struct CardView: View {
     @State private var base: Reminder
     @State private var draft: Reminder
     @State private var showDate = false
-    @State private var confirmRepeatReplace: RepeatPreset?
+    @State private var confirmRepeatReplace: PendingRepeat?
+    @State private var showCustomRepeat = false
+    private struct PendingRepeat { var recurrence: Recurrence? }
     @State private var confirmClearRepeat = false
     @FocusState private var focus: Field?
     private enum Field { case title, notes }
@@ -151,7 +153,7 @@ struct CardView: View {
         .confirmationDialog("Replace the current repeat?", isPresented: Binding(
             get: { confirmRepeatReplace != nil }, set: { if !$0 { confirmRepeatReplace = nil } })
         ) {
-            Button("Replace") { if let p = confirmRepeatReplace { applyRepeat(p) } }
+            Button("Replace") { if let p = confirmRepeatReplace { applyRepeat(p.recurrence) } }
         } message: {
             Text("Private features are off, so an Hourly repeat set in Reminders can't be detected. It would be replaced.")
         }
@@ -161,20 +163,32 @@ struct CardView: View {
         if draft.extras?.hourly == true {
             Image(systemName: "repeat").help("Hourly repeat — edit in Reminders")
         } else {
+            let current = RepeatPreset(draft.recurrence, due: draft.due, clock: store.clock)
             Menu {
                 ForEach(RepeatPreset.allCases.filter { $0 != .custom }, id: \.self) { p in
-                    Button(p.rawValue) {
-                        // R7: in public-only mode an existing rule might be Hourly; ask before replacing it.
-                        if !store.bridgeReadable && base.recurrence != nil && p.recurrence() != base.recurrence { confirmRepeatReplace = p } else { applyRepeat(p) }
-                    }
+                    Toggle(p.rawValue, isOn: Binding(get: { current == p }, set: { _ in chooseRepeat(p.recurrence()) }))
                 }
+                Divider()
+                if current == .custom, let text = RecurrenceMap.describe(draft.recurrence, due: draft.due, clock: store.clock) {
+                    Toggle(text, isOn: Binding(get: { true }, set: { _ in showCustomRepeat = true }))
+                }
+                Button("Custom…") { showCustomRepeat = true }
             } label: { Image(systemName: "repeat") }
                 .menuIndicator(.hidden).fixedSize().help("Repeat")
+                .sheet(isPresented: $showCustomRepeat) {
+                    RepeatEditor(recurrence: draft.recurrence, due: draft.due.flatMap { Due.date($0, clock: store.clock) },
+                                 clock: store.clock) { chooseRepeat($0) }
+                }
         }
     }
 
-    private func applyRepeat(_ p: RepeatPreset) {
-        let r = p.recurrence()
+    /// R7: in public-only mode an existing rule might be Hourly (EventKit can't see it); ask before replacing it.
+    private func chooseRepeat(_ r: Recurrence?) {
+        if !store.bridgeReadable && base.recurrence != nil && r != base.recurrence { confirmRepeatReplace = PendingRepeat(recurrence: r) }
+        else { applyRepeat(r) }
+    }
+
+    private func applyRepeat(_ r: Recurrence?) {
         if r != nil && draft.due == nil { draft.due = Due.components(store.clock.today, allDay: true, timeZone: nil, clock: store.clock) }
         draft.recurrence = r
         commit()
@@ -233,7 +247,7 @@ private struct Chips: View {
         let r = reminder, x = r.extras
         let items: [String] = [
             r.due.map { Display.duePill($0, clock: store.clock).text },
-            RecurrenceMap.describe(r.recurrence, hourly: x?.hourly == true).map { "Repeats " + $0.lowercased() },
+            RecurrenceMap.describe(r.recurrence, hourly: x?.hourly == true, due: r.due, clock: store.clock).map { "Repeats " + $0.prefix(1).lowercased() + $0.dropFirst() },
             (x?.earlyAlerts ?? []).first.map { earlyText($0) },
             x?.urgent == true ? "Urgent" : nil,
             r.alarms.compactMap(\.location).first.map { ($0.leaving ? "Leaving: " : "Arriving: ") + $0.title },

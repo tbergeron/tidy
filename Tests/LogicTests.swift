@@ -298,3 +298,21 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(DuePreset.tomorrowMorning.detail(clock).hasPrefix("Thu"))
     }
 }
+
+@Suite struct RepeatTextTests {
+    @Test func customPhrases() {
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .daily, interval: 2), clock: clock) == "Every 2 days")
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .weekly, interval: 2, weekdays: [.init(day: 2), .init(day: 4)]), clock: clock) == "Every 2 weeks on Mon, Wed")
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .monthly, weekdays: (2...6).map { .init(day: $0) }, setPositions: [-1]), clock: clock) == "Every month on the last weekday")
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .monthly, weekdays: [.init(day: 3, week: 2)]), clock: clock) == "Every month on the second Tuesday")
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .monthly, monthDays: [15, -1]), clock: clock) == "Every month on the 15th, last day")
+        #expect(RecurrenceMap.describe(Recurrence(frequency: .daily, interval: 3, end: .count(5)), clock: clock) == "Every 3 days, 5 times")
+    }
+
+    @Test func weeklyOnDueWeekdayIsPlainWeekly() {
+        // Reminders.app writes "Weekly" with the due weekday spelled out (the 21st is a Wednesday = 4).
+        let r = Recurrence(frequency: .weekly, weekdays: [.init(day: 4)])
+        #expect(RepeatPreset(r, due: allDay(21), clock: clock) == .weekly)
+        #expect(RepeatPreset(r, due: allDay(22), clock: clock) == .custom)
+    }
+}
