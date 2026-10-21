@@ -128,6 +128,7 @@ struct ListRow: View {
                 if store.showCompleted.contains(list.id) { store.showCompleted.remove(list.id) } else { store.showCompleted.insert(list.id) }
             }
             Button("Open in Reminders") { store.openInReminders(list: list.id) }
+            Button("Hide List") { store.hiddenLists.insert(list.id) }
             Divider()
             Button("Delete List…", role: .destructive) { store.prepareListDelete(list) }.disabled(list.immutable)
         }

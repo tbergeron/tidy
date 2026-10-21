@@ -59,6 +59,14 @@ final class Store {
     var collapsed = Set(UserDefaults.standard.stringArray(forKey: "collapsed") ?? []) {
         didSet { UserDefaults.standard.set(Array(collapsed), forKey: "collapsed") }
     }
+    /// Lists hidden from the sidebar and from every smart list, count and the badge (app-local).
+    var hiddenLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenLists") ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(hiddenLists), forKey: "hiddenLists")
+            updateBadge()
+            if case .list(let id) = destination, hiddenLists.contains(id) { destination = .today }
+        }
+    }
     var hiddenSmartLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenSmartLists") ?? []) {
         didSet { UserDefaults.standard.set(Array(hiddenSmartLists), forKey: "hiddenSmartLists") }
     }
@@ -164,8 +172,8 @@ final class Store {
         guard auth == .fullAccess else { return 0 }
         switch badgeMode {
         case .off: return 0
-        case .overdue: return live.filter { Smart.isOverdue($0, clock) }.count
-        case .overdueAndToday: return live.filter { Smart.inToday($0, clock) }.count   // == the Today count
+        case .overdue: return shown.filter { Smart.isOverdue($0, clock) }.count
+        case .overdueAndToday: return shown.filter { Smart.inToday($0, clock) }.count   // == the Today count
         }
     }
 
@@ -207,6 +215,8 @@ final class Store {
 
     /// Reminders that are not pending deletion.
     var live: [Reminder] { snap.reminders.values.filter { pendingDeletes[$0.id] == nil } }
+    /// Live reminders outside hidden lists — what sidebar counts, smart lists, tags and the badge use.
+    var shown: [Reminder] { live.filter { !hiddenLists.contains($0.listID) } }
 
     func children(of id: String) -> [Reminder] { live.filter { $0.parentID == id } }
 
@@ -224,7 +234,7 @@ final class Store {
 
     var sidebarAccounts: [SidebarAccount] {
         snap.accounts.compactMap { a in
-            let lists = snap.lists.filter { $0.accountID == a.id }
+            let lists = snap.lists.filter { $0.accountID == a.id && !hiddenLists.contains($0.id) }
             guard !lists.isEmpty else { return nil }
             let groups = snap.groups.filter { $0.accountID == a.id }
             var entries: [SidebarEntry] = lists.filter { l in l.groupID == nil || !groups.contains { $0.id == l.groupID } }.map { .list($0) }
@@ -244,18 +254,18 @@ final class Store {
     private static func entryTitle(_ e: SidebarEntry) -> String { switch e { case .list(let l): l.title; case .group(let g, _): g.name } }
     private static func titleOrder(_ a: RList, _ b: RList) -> Bool { a.title.localizedStandardCompare(b.title) == .orderedAscending }
 
-    var pinnedLists: [RList] { bridgeReadable ? snap.lists.filter(\.isPinned) : [] }
+    var pinnedLists: [RList] { bridgeReadable ? snap.lists.filter { $0.isPinned && !hiddenLists.contains($0.id) } : [] }
 
     var allTags: [(name: String, count: Int)] {
         var counts: [String: (String, Int)] = [:]
-        for r in live where !r.isCompleted {
+        for r in shown where !r.isCompleted {
             for t in r.extras?.tags ?? [] { counts[t.lowercased(), default: (t, 0)].1 += 1 }
         }
         return counts.values.map { (name: $0.0, count: $0.1) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     func count(_ d: Destination) -> Int? {
-        let open = live.filter { !$0.isCompleted }
+        let open = shown.filter { !$0.isCompleted }
         switch d {
         case .today: return open.filter { Smart.inToday($0, clock) }.count
         case .scheduled: return open.filter { $0.due != nil }.count
@@ -313,7 +323,7 @@ final class Store {
     }
 
     private func candidates(_ d: Destination, includeCompleted: Bool) -> [Reminder] {
-        live.filter { r in
+        shown.filter { r in
             let visibleCompletion = includeCompleted || !r.isCompleted || justCompleted.contains(r.id)
             switch d {
             case .today: return (!r.isCompleted || justCompleted.contains(r.id)) && (Smart.inToday(r, clock) || justCompleted.contains(r.id) && r.due != nil)
@@ -675,7 +685,7 @@ final class Store {
 
     /// Overdue = due on an earlier day (what the Overdue section shows).
     var overdueIDs: [String] {
-        live.filter { !$0.isCompleted && !locked($0.id) && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
+        shown.filter { !$0.isCompleted && !locked($0.id) && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
     }
 
     /// Asks first (the dialog is in MainView).
@@ -733,7 +743,7 @@ final class Store {
 
     /// Days with open reminders (dots in the date picker).
     var dueDays: Set<Date> {
-        Set(live.lazy.filter { !$0.isCompleted }.compactMap { $0.due.flatMap { Due.day($0, clock: self.clock) } })
+        Set(shown.lazy.filter { !$0.isCompleted }.compactMap { $0.due.flatMap { Due.day($0, clock: self.clock) } })
     }
 
     /// Saves typed draft text (if any) and closes the draft row.

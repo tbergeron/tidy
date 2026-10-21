@@ -483,7 +483,18 @@ private struct ViewOptions: View {
     var body: some View {
         @Bindable var store = store
         if destination == .today { Toggle("Group by Time", isOn: $store.groupByTime) }
+        Menu("Lists") {
+            ForEach(store.snap.lists.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }) { l in
+                Toggle(l.title, isOn: Binding(get: { !store.hiddenLists.contains(l.id) },
+                                              set: { if $0 { store.hiddenLists.remove(l.id) } else { store.hiddenLists.insert(l.id) } }))
+            }
+            if !store.hiddenLists.isEmpty {
+                Divider()
+                Button("Show All Lists") { store.hiddenLists = [] }
+            }
+        }
         if case .list(let id) = destination {
+            Divider()
             Toggle("Show Completed", isOn: Binding(get: { store.showCompleted.contains(id) },
                                                    set: { if $0 { store.showCompleted.insert(id) } else { store.showCompleted.remove(id) } }))
             if let l = store.list(id), let style = l.sortingStyle {
