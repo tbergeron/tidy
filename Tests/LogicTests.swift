@@ -129,7 +129,8 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
     @Test func scheduledBuckets() {
         #expect(Smart.scheduledBucket(reminder(due: allDay(20)), clock) == .overdue)
         #expect(Smart.scheduledBucket(reminder(due: allDay(27)), clock) == .day(at(27)))
-        #expect(Smart.scheduledBucket(reminder(due: allDay(28)), clock) == .month(at(1)))
+        #expect(Smart.scheduledBucket(reminder(due: allDay(28)), clock) == .month(at(28)))   // rest of October: after the days
+        #expect(Smart.scheduledBucket(reminder(due: allDay(28)), clock)! > .day(at(27)))
         #expect(Smart.scheduledBucket(reminder(due: allDay(3, month: 11)), clock) == .month(at(1, month: 11)))
         #expect(Smart.scheduledDays(clock).count == 7)
     }

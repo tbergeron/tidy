@@ -136,40 +136,31 @@ struct ReminderListView: View {
     private func dragIDs(_ id: String) -> [String] { store.selection.contains(id) ? Array(store.selection) : [id] }
 }
 
+/// Tag filter bar for the view (the title itself is in the window toolbar).
 private struct ListHeader: View {
     let destination: Destination
     @Environment(Store.self) private var store
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(store.title(destination))
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(titleColor)
-            let tags = Array(Set(store.tagsInView(destination)).union(store.tagFilter)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-            if case .tag = destination {} else if !tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        TagChip(name: "All", on: store.tagFilter.isEmpty) { store.tagFilter = [] }
-                        ForEach(tags, id: \.self) { t in
-                            TagChip(name: t, on: store.tagFilter.contains(t)) {
-                                // Click = only this tag; ⌘-click adds (AND), like Things.
-                                if NSEvent.modifierFlags.contains(.command) {
-                                    if store.tagFilter.contains(t) { store.tagFilter.remove(t) } else { store.tagFilter.insert(t) }
-                                } else {
-                                    store.tagFilter = store.tagFilter == [t] ? [] : [t]
-                                }
+        let tags = Array(Set(store.tagsInView(destination)).union(store.tagFilter)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        if case .tag = destination {} else if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    TagChip(name: "All", on: store.tagFilter.isEmpty) { store.tagFilter = [] }
+                    ForEach(tags, id: \.self) { t in
+                        TagChip(name: t, on: store.tagFilter.contains(t)) {
+                            // Click = only this tag; ⌘-click adds (AND), like Things.
+                            if NSEvent.modifierFlags.contains(.command) {
+                                if store.tagFilter.contains(t) { store.tagFilter.remove(t) } else { store.tagFilter.insert(t) }
+                            } else {
+                                store.tagFilter = store.tagFilter == [t] ? [] : [t]
                             }
                         }
                     }
                 }
             }
+            .padding(.vertical, 4)
         }
-        .padding(.top, 8).padding(.bottom, 4)
-    }
-
-    private var titleColor: Color {
-        if case .list(let id) = destination, let l = store.list(id) { return Color(l.color) }
-        return .primary
     }
 }
 

@@ -207,8 +207,9 @@ enum Smart {
         if day < clock.today { return .overdue }
         let days = clock.cal.dateComponents([.day], from: clock.today, to: day).day ?? 0
         if days < 7 { return .day(day) }
-        let m = clock.cal.dateComponents([.year, .month], from: day)
-        return .month(clock.cal.date(from: m)!)
+        // Month groups sort after the 7 day sections: the rest of this month is keyed at today + 7.
+        let m = clock.cal.date(from: clock.cal.dateComponents([.year, .month], from: day))!
+        return .month(max(m, clock.cal.date(byAdding: .day, value: 7, to: clock.today)!))
     }
 
     /// The always-visible day sections in Scheduled (drop targets): today … today+6.
