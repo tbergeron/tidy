@@ -230,6 +230,8 @@ private struct SectionHeader: View {
             }
         }
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)   // the whole heading row is the drop target
+        .contentShape(Rectangle())
         .background(targeted ? Color.accentColor.opacity(0.12) : .clear, in: .rect(cornerRadius: 4))
         .dropDestination(for: DragItems.self) { items, _ in
             store.drop(items.flatMap(\.reminderIDs), on: section.kind, undo: um)
