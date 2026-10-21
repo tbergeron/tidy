@@ -63,7 +63,7 @@ struct AppCommands: Commands {
             Button("This Weekend") { reschedule { Due.thisWeekend($0) } }.keyboardShortcut("k")
             Button("Next Week") { reschedule { Due.nextWeek($0) } }.keyboardShortcut("k", modifiers: [.command, .option])
             Divider()
-            Button("Move All Overdue to Today") { store.moveOverdueToToday(undo: um) }.keyboardShortcut("t", modifiers: [.command, .control])
+            Button("Move All Overdue to Today…") { store.requestMoveOverdueToToday() }.keyboardShortcut("t", modifiers: [.command, .control])
             Button("Clear Date") { store.setDue(ids, { _ in nil }, undo: um) }.disabled(none)
         }
         CommandGroup(after: .sidebar) {

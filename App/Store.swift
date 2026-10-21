@@ -36,6 +36,7 @@ final class Store {
     var showNewList = false
     var showMoveSheet = false
     var confirmDeleteIDs: [String]?
+    var confirmMoveOverdue = false
     var listToEdit: RList?
     var listToDelete: RList?
     var datePicker: (anchor: String, ids: [String])?   // "Pick a Date…": popover on the anchor row
@@ -628,9 +629,18 @@ final class Store {
         return (title, notes.joined(separator: " "), rs.contains(where: \.isRepeating) ? "Delete All Occurrences" : "Delete")
     }
 
+    /// Overdue = due on an earlier day (what the Overdue section shows).
+    var overdueIDs: [String] {
+        live.filter { !$0.isCompleted && !locked($0.id) && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
+    }
+
+    /// Asks first (the dialog is in MainView).
+    func requestMoveOverdueToToday() {
+        if !overdueIDs.isEmpty { confirmMoveOverdue = true }
+    }
+
     func moveOverdueToToday(undo um: UndoManager?) {
-        let ids = live.filter { !$0.isCompleted && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
-        setDue(ids, { Due.moving($0.due, toDay: self.clock.today, clock: self.clock) }, undo: um)
+        setDue(overdueIDs, { Due.moving($0.due, toDay: self.clock.today, clock: self.clock) }, undo: um)
     }
 
     /// New reminders can only be created where they'll stay visible and writable.

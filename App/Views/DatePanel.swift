@@ -59,6 +59,7 @@ struct DatePanel: View {
             .frame(width: 272)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .focusEffectDisabled()   // no focus ring on Today when the popover opens
     }
 
     private func preset(_ p: DuePreset) -> DateComponents {

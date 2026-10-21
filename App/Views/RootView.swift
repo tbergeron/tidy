@@ -47,6 +47,12 @@ struct MainView: View {
         } message: {
             Text(deleteText.message)
         }
+        .confirmationDialog(moveOverdueTitle, isPresented: $store.confirmMoveOverdue) {
+            Button("Move to Today") { store.moveOverdueToToday(undo: um) }
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text("They keep their time of day. You can undo this with ⌘Z.")
+        }
         .confirmationDialog("Move to another account?", isPresented: Binding(
             get: { store.pendingCrossMove != nil }, set: { if !$0 { store.pendingCrossMove = nil } })
         ) {
@@ -74,6 +80,10 @@ struct MainView: View {
         }
     }
 
+    private var moveOverdueTitle: String {
+        let n = store.overdueIDs.count
+        return n == 1 ? "Move 1 overdue reminder to today?" : "Move \(n) overdue reminders to today?"
+    }
     private var deleteListTitle: String { "Delete “\(store.listToDelete?.title ?? "")”?" }
     private var deleteText: (title: String, message: String, button: String) { store.deleteConfirmation(store.confirmDeleteIDs ?? []) }
 }

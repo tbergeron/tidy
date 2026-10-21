@@ -162,6 +162,30 @@ private struct ListHeader: View {
     }
 }
 
+/// Small text button with a hover highlight (and the pointing-hand cursor).
+private struct HoverButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var hover = false
+
+    init(_ title: String, action: @escaping () -> Void) { self.title = title; self.action = action }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(hover ? Color.accentColor : .secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(hover ? Color.accentColor.opacity(0.15) : .clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .pointerStyle(.link)
+        .animation(.easeOut(duration: 0.12), value: hover)
+    }
+}
+
 private struct TagChip: View {
     let name: String
     let on: Bool
@@ -190,8 +214,7 @@ private struct SectionHeader: View {
                 .foregroundStyle(section.kind == .overdue ? Color.red : section.kind == .completed ? .secondary : Color.accentColor)
             if section.kind == .overdue && !section.rows.isEmpty {
                 Spacer()
-                Button("Move All to Today") { store.moveOverdueToToday(undo: um) }
-                    .buttonStyle(.borderless).font(.caption)
+                HoverButton("Move All to Today") { store.requestMoveOverdueToToday() }
             }
         }
         .padding(.vertical, 2)
