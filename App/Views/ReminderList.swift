@@ -57,7 +57,8 @@ struct ReminderListView: View {
         .listStyle(.inset)
         .scrollContentBackground(.visible)
         .contextMenu(forSelectionType: String.self) { ids in
-            ReminderMenu(ids: Array(ids))
+            // Anchor for popovers: the topmost selected row as shown.
+            ReminderMenu(ids: Array(ids), anchor: sections.flatMap(\.rows).first { ids.contains($0.id) }?.id)
         } primaryAction: { ids in
             if ids.count == 1 { store.draft = nil; store.editingID = ids.first }
         }
@@ -240,6 +241,10 @@ struct ReminderRow: View {
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: done ? "Mark as Not Completed" : "Complete") { store.toggleComplete([r.id], undo: um) }
+        .popover(isPresented: Binding(get: { store.datePicker?.anchor == r.id }, set: { if !$0 { store.datePicker = nil } }),
+                 arrowEdge: .trailing) {
+            DuePopover(ids: store.datePicker?.ids ?? [r.id])
+        }
     }
 
     private func toggleCollapsed(_ id: String) {
@@ -343,6 +348,7 @@ private struct DraftRow: View {
 
 struct ReminderMenu: View {
     let ids: [String]
+    var anchor: String?
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
 
@@ -356,12 +362,19 @@ struct ReminderMenu: View {
         }
         .disabled(locked)
         Menu("Due") {
-            Button("Today") { due(store.clock.today) }
-            Button("Tomorrow") { due(Due.tomorrow(store.clock)) }
-            Button("This Weekend") { due(Due.thisWeekend(store.clock)) }
-            Button("Next Week") { due(Due.nextWeek(store.clock)) }
+            ForEach(DuePreset.allCases, id: \.self) { p in
+                Button(p.title(store.clock)) {
+                    let d = p.date(store.clock)
+                    store.setDue(ids, { Due.components(d, allDay: false, timeZone: $0.due?.timeZone, clock: store.clock) }, undo: um)
+                }
+            }
             Divider()
-            Button("Clear") { store.setDue(ids, { _ in nil }, undo: um) }
+            Button("Pick a Date…") {
+                guard let a = anchor ?? ids.first else { return }
+                if store.editingID == a { store.editingID = nil }   // the popover anchors on the row, not the open card
+                store.datePicker = (a, ids)
+            }
+            Button("Remove Date") { store.setDue(ids, { _ in nil }, undo: um) }
         }
         .disabled(locked)
         Button("Move to…") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
@@ -378,7 +391,28 @@ struct ReminderMenu: View {
         Button("Delete", role: .destructive) { store.requestDelete(ids, undo: um) }.disabled(locked)
     }
 
-    private func due(_ day: Date) { store.setDue(ids, { Due.moving($0.due, toDay: day, clock: store.clock) }, undo: um) }
+}
+
+/// "Pick a Date…" from the context menu. One write when it closes; applies the same date to every selected reminder.
+private struct DuePopover: View {
+    let ids: [String]
+    @Environment(Store.self) private var store
+    @Environment(\.undoManager) private var um
+    @State private var initial: DateComponents?
+    @State private var due: DateComponents?
+
+    var body: some View {
+        DueEditor(due: $due, clock: store.clock)
+            .onAppear {
+                initial = ids.first.flatMap { store.snap.reminders[$0]?.due }
+                due = initial
+            }
+            .onDisappear {
+                guard !Due.same(due, initial, clock: store.clock) else { return }
+                let picked = due
+                store.setDue(ids, { _ in picked }, undo: um)
+            }
+    }
 }
 
 private struct ViewOptions: View {

@@ -315,3 +315,17 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(CalendarLayout.wallHours(t, on: day, clock: clock) == 9)
     }
 }
+
+@Suite struct DuePresetTests {
+    @Test func presetTimes() {
+        #expect(DuePreset.todayMorning.date(clock) == at(21, 9))
+        #expect(DuePreset.thisEvening.date(clock) == at(21, 18))
+        #expect(DuePreset.tomorrowMorning.date(clock) == at(22, 9))
+        #expect(DuePreset.inAWeek.date(clock) == at(28, 9))
+    }
+
+    @Test func titlesNameTheDay() {
+        #expect(DuePreset.todayMorning.title(clock).hasPrefix("Today at "))
+        #expect(DuePreset.inAWeek.title(clock).hasPrefix("Next Wednesday at "))   // the 21st is a Wednesday
+    }
+}

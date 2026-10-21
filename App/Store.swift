@@ -20,6 +20,7 @@ final class Store {
             flushDraft()
             selection = []
             editingID = nil
+            datePicker = nil
             tagFilter = []
             scheduleReload()
         }
@@ -35,6 +36,7 @@ final class Store {
     var confirmDeleteIDs: [String]?
     var listToEdit: RList?
     var listToDelete: RList?
+    var datePicker: (anchor: String, ids: [String])?   // "Pick a Date…": popover on the anchor row
     var listDeleteCount: Int?
     var pendingCrossMove: (ids: [String], listID: String)?
     var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere

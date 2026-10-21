@@ -82,6 +82,35 @@ enum Due {
     }
 }
 
+/// Quick times for the reminder context menu's Due submenu.
+enum DuePreset: CaseIterable, Sendable {
+    case todayMorning, thisEvening, tomorrowMorning, inAWeek
+
+    func date(_ clock: Clock) -> Date {
+        let (days, hour) = switch self {
+        case .todayMorning: (0, 9)
+        case .thisEvening: (0, 18)
+        case .tomorrowMorning: (1, 9)
+        case .inAWeek: (7, 9)
+        }
+        let day = clock.cal.date(byAdding: .day, value: days, to: clock.today)!
+        return clock.cal.date(bySettingHour: hour, minute: 0, second: 0, of: day)!   // wall clock: DST-safe
+    }
+
+    /// "Today at 9:00 AM", "Next Wednesday at 9:00 AM"… (time in the user's format).
+    func title(_ clock: Clock) -> String {
+        let d = date(clock)
+        let time = d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: clock.cal.timeZone))
+        let day = switch self {
+        case .todayMorning: "Today"
+        case .thisEvening: "This Evening"
+        case .tomorrowMorning: "Tomorrow"
+        case .inAWeek: "Next " + d.formatted(Date.FormatStyle(timeZone: clock.cal.timeZone).weekday(.wide))
+        }
+        return "\(day) at \(time)"
+    }
+}
+
 // MARK: - Alarms (R2)
 
 enum AlarmPlan {
