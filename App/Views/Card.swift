@@ -62,6 +62,7 @@ struct CardView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1...12)
                 .focused($focus, equals: .notes)
+                .onSubmit { close(); store.startCompose() }   // Return chains to the next new reminder; ⌥Return is a new line
                 .padding(.leading, 23)
 
             let kids = store.children(of: draft.id)
