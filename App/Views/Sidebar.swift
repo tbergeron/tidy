@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct Sidebar: View {
@@ -65,6 +66,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .background(ListDropFix(rows: store.sidebarAccounts.count + store.orderedSmart.count + store.snap.lists.count))
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Button { store.showNewList = true } label: { Label("New List", systemImage: "plus") }
@@ -158,6 +160,54 @@ struct PieSlice: Shape {
         p.addArc(center: c, radius: rect.width / 2, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(fraction, 1)), clockwise: false)
         p.closeSubpath()
         return p
+    }
+}
+
+/// A row's `dropDestination` registers twice: on the List's table (which highlights the row and runs the action)
+/// and on a view SwiftUI lays over the row's content, which takes the drag there without highlighting.
+/// This unregisters those inner views (again after scrolling brings in new cells) so the table handles the whole row.
+/// ponytail: relies on SwiftUI's AppKit view layout; if it changes, drops still work, only the highlight gap returns.
+struct ListDropFix: NSViewRepresentable {
+    let rows: Int   // re-runs when rows come and go
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ v: NSView, context: Context) {
+        DispatchQueue.main.async { context.coordinator.attach(near: v) }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor final class Coordinator {
+        private weak var table: NSView?
+        private var observer: NSObjectProtocol?
+
+        func attach(near probe: NSView) {
+            guard let root = probe.window?.contentView else { return }
+            let x = probe.convert(probe.bounds, to: nil).midX
+            // The probe's List: the narrowest table under it (the detail list's scroll view runs under the sidebar).
+            let frames = Self.views(root).compactMap { v -> (NSView, CGRect)? in
+                guard v is NSTableView, let sv = v.enclosingScrollView else { return nil }
+                return (v, sv.convert(sv.bounds, to: nil))
+            }
+            guard let t = frames.filter({ $0.1.minX <= x && x <= $0.1.maxX }).min(by: { $0.1.width < $1.1.width })?.0 else { return }
+            if t !== table, let clip = t.enclosingScrollView?.contentView {
+                table = t
+                if let observer { NotificationCenter.default.removeObserver(observer) }
+                clip.postsBoundsChangedNotifications = true
+                observer = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+                    DispatchQueue.main.async { MainActor.assumeIsolated { self?.unregisterInner() } }
+                }
+            }
+            unregisterInner()
+        }
+
+        private func unregisterInner() {
+            guard let table else { return }
+            for v in Self.views(table) where String(describing: type(of: v)).contains("DraggingDestination") && !v.registeredDraggedTypes.isEmpty {
+                v.unregisterDraggedTypes()
+            }
+        }
+
+        private static func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
     }
 }
 

@@ -43,6 +43,9 @@ struct ReminderListView: View {
                             }
                         }
                         .listRowSeparator(.hidden)
+                        .dropDestination(for: DragItems.self) { items, _ in
+                            store.drop(items.flatMap(\.reminderIDs), on: section.kind, undo: um)
+                        }
                     }
                     if section.id == draftSection { newRows }
                 } header: {
@@ -60,6 +63,7 @@ struct ReminderListView: View {
             }
         }
         .listStyle(.inset)
+        .background(ListDropFix(rows: sections.reduce(0) { $0 + $1.rows.count + 1 }))
         .focused($listFocused)
         // Keep keyboard focus on the list so Return / Space / ⌫ work without clicking first.
         .onAppear { listFocused = true }
@@ -228,17 +232,7 @@ private struct SectionHeader: View {
         .padding(.vertical, 2)
         .background(targeted ? Color.accentColor.opacity(0.12) : .clear, in: .rect(cornerRadius: 4))
         .dropDestination(for: DragItems.self) { items, _ in
-            let ids = items.flatMap(\.reminderIDs)
-            switch section.kind {
-            case .day(let day):
-                store.setDue(ids, { Due.moving($0.due, toDay: day, clock: store.clock) }, undo: um)
-                return true
-            case .list(let lid):
-                store.move(ids, toList: lid, undo: um)
-                return true
-            default:
-                return false
-            }
+            store.drop(items.flatMap(\.reminderIDs), on: section.kind, undo: um)
         } isTargeted: { targeted = $0 }
     }
 }
