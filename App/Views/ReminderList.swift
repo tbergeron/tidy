@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension UTType { static let ttrItems = UTType(exportedAs: "com.ticktickreminders.items") }
+extension UTType { static let ttrItems = UTType(exportedAs: "com.tidyreminders.items") }
 
 /// Drag payload: only IDs, never EventKit objects.
 struct DragItems: Codable, Transferable {

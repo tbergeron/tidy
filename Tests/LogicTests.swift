@@ -1,7 +1,7 @@
 import EventKit
 import Foundation
 import Testing
-@testable import TickTickReminders
+@testable import Tidy
 
 /// Wednesday 2026-10-21 10:00 in Montreal, week starting Sunday.
 private let tz = TimeZone(identifier: "America/Montreal")!

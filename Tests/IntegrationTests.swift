@@ -1,7 +1,7 @@
 import EventKit
 import Foundation
 import Testing
-@testable import TickTickReminders
+@testable import Tidy
 
 /// Runs against real Reminders. Enabled only when ALL hold:
 ///  1. env TTR_INTEGRATION=1 (xcodebuild: TEST_RUNNER_TTR_INTEGRATION=1),

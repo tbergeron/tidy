@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>TickTickReminders</string>
+	<string>Tidy</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,7 +23,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>TickTickReminders shows and edits your Apple Reminders.</string>
+	<string>Tidy shows and edits your Apple Reminders.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -34,7 +34,7 @@
 			<key>UTTypeDescription</key>
 			<string>Reminders items</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.ticktickreminders.items</string>
+			<string>com.tidyreminders.items</string>
 		</dict>
 	</array>
 </dict>

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct TickTickRemindersApp: App {
+struct TidyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = Store()
 

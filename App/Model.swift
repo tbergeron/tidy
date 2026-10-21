@@ -154,7 +154,7 @@ enum AppError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthorized: "TickTickReminders doesn't have access to Reminders."
+        case .notAuthorized: "Tidy doesn't have access to Reminders."
         case .noAccount: "No Reminders account is set up. Turn on iCloud Reminders in System Settings › Internet Accounts."
         case .notFound: "Changed or deleted on another device."
         case .timeout: "Reminders didn't respond."

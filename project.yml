@@ -1,4 +1,4 @@
-name: TickTickReminders
+name: Tidy
 options:
   deploymentTarget:
     macOS: "27.0"
@@ -12,18 +12,18 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "27.0"
     CLANG_ENABLE_OBJC_ARC: YES
 targets:
-  TickTickReminders:
+  Tidy:
     type: application
     platform: macOS
     sources: [App]
     info:
       path: Support/Info.plist
       properties:
-        CFBundleDisplayName: TickTickReminders
+        CFBundleDisplayName: Tidy
         LSApplicationCategoryType: public.app-category.productivity
-        NSRemindersFullAccessUsageDescription: "TickTickReminders shows and edits your Apple Reminders."
+        NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
         UTExportedTypeDeclarations:
-          - UTTypeIdentifier: com.ticktickreminders.items
+          - UTTypeIdentifier: com.tidyreminders.items
             UTTypeConformsTo: [public.data]
             UTTypeDescription: Reminders items
     entitlements:
@@ -32,7 +32,7 @@ targets:
         com.apple.security.personal-information.calendars: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.app.dev
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app.dev
         CODE_SIGN_IDENTITY: "Apple Development"
         SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/TTRBridge.h
         ENABLE_RESOURCE_ACCESS_CALENDARS: YES
@@ -40,7 +40,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.app
+          PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app
           CODE_SIGN_IDENTITY: "Developer ID Application"
           OTHER_CODE_SIGN_FLAGS: --timestamp
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
@@ -49,19 +49,19 @@ targets:
     platform: macOS
     sources: [Tests]
     dependencies:
-      - target: TickTickReminders
+      - target: Tidy
     settings:
       base:
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TickTickReminders.app/Contents/MacOS/TickTickReminders"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Tidy.app/Contents/MacOS/Tidy"
         BUNDLE_LOADER: "$(TEST_HOST)"
         CODE_SIGN_IDENTITY: "Apple Development"
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.tests
 schemes:
-  TickTickReminders:
+  Tidy:
     build:
       targets:
-        TickTickReminders: all
+        Tidy: all
         Tests: [test]
     test:
       targets: [Tests]

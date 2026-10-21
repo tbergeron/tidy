@@ -3,7 +3,7 @@
 One line per spike: outcome · decision · macOS build. Run in the `ttr-test` macOS user (throwaway Apple Account, iCloud Reminders on, marker list `TTR-TEST-ACCOUNT`), never against real data.
 
 ```bash
-TEST_RUNNER_TTR_INTEGRATION=1 xcodebuild test -project TickTickReminders.xcodeproj -scheme TickTickReminders -destination 'platform=macOS' -derivedDataPath build/DD -only-testing:Tests/IntegrationTests
+TEST_RUNNER_TTR_INTEGRATION=1 xcodebuild test -project Tidy.xcodeproj -scheme Tidy -destination 'platform=macOS' -derivedDataPath build/DD -only-testing:Tests/IntegrationTests
 ```
 
 Fixtures to create **in Reminders.app** in the test account: `FX-rich` (tags, flag, urgent, early alert, URL, image, section, 2 subtasks, styled notes, location, timed weekly), `FX-hourly`, `FX-allday`, `FX-timed`, `FX-remindme`, a group with 2 lists, one list per sort style, early alerts in each unit, a custom smart list.

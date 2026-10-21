@@ -141,7 +141,7 @@ struct DeniedView: View {
         VStack(spacing: 14) {
             Image(systemName: "lock").font(.system(size: 44)).foregroundStyle(.secondary)
             Text("Reminders access is off").font(.title2.weight(.semibold))
-            Text("Turn on Full Access for TickTickReminders in System Settings › Privacy & Security › Reminders, then reopen the app.")
+            Text("Turn on Full Access for Tidy in System Settings › Privacy & Security › Reminders, then reopen the app.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
             Button("Open System Settings") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!)
