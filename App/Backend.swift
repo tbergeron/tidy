@@ -12,7 +12,7 @@ actor Backend {
     private let queue = DispatchSerialQueue(label: "ttr.backend")
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    private let ek: EKEventStore = {
+    private lazy var ek: EKEventStore = {   // created on first use, on this actor's queue (not main)
         let t = ContinuousClock.now
         let s = EKEventStore()
         perfLog.debug("EKEventStore(): \(perfMS(t), privacy: .public)")
@@ -306,6 +306,14 @@ actor Backend {
         case .eventStoreNotAuthorized: return AppError.notAuthorized
         default: return AppError.eventKit(ns.localizedDescription)
         }
+    }
+
+    /// Sections of one list (and which reminders are in them), for opening a list without a full reload.
+    func sections(inList listID: String, reminderIDs: [String]) -> (sections: [RSection], sectionOf: [String: String])? {
+        guard let bridge, let infos = try? bridge.sections(inList: listID) else { return nil }
+        let sections = infos.map { RSection(id: $0.identifier, name: $0.name) }
+        let of = sections.isEmpty ? [:] : ((try? bridge.sectionIDs(forReminders: reminderIDs)) ?? [:])
+        return (sections, of)
     }
 
     // MARK: Private writes

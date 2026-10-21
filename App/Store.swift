@@ -9,9 +9,9 @@ final class Store {
     let backend = Backend()
 
     var auth = EKEventStore.authorizationStatus(for: .reminder)
-    var snap = Snapshot() { didSet { updateBadge() } }
+    var snap = Snapshot() { didSet { rebuildIndex() } }
     var loaded = false
-    var clock = Clock.current { didSet { updateBadge() } }
+    var clock = Clock.current { didSet { rebuildIndex() } }
 
     var destination: Destination = .today {
         didSet {
@@ -22,7 +22,8 @@ final class Store {
             editingID = nil
             datePicker = nil
             tagFilter = []
-            scheduleReload()
+            // Smart lists render from the loaded snapshot; a list only needs its sections.
+            if case .list(let id) = destination { refreshSections(id) }
         }
     }
     var selection: Set<String> = []
@@ -46,7 +47,7 @@ final class Store {
     @ObservationIgnored var commitOpenCard: (() -> Void)?
     @ObservationIgnored var cancelOpenCard: (() -> Void)?
 
-    private(set) var pendingDeletes: [String: Date] = [:] { didSet { updateBadge() } }
+    private(set) var pendingDeletes: [String: Date] = [:] { didSet { rebuildIndex() } }
     private(set) var justCompleted: Set<String> = []
 
     // Preferences (app-local; never Reminders data)
@@ -63,7 +64,7 @@ final class Store {
     var hiddenLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenLists") ?? []) {
         didSet {
             UserDefaults.standard.set(Array(hiddenLists), forKey: "hiddenLists")
-            updateBadge()
+            rebuildIndex()
             if case .list(let id) = destination, hiddenLists.contains(id) { destination = .today }
         }
     }
@@ -119,16 +120,26 @@ final class Store {
     /// Launch: show the last data at once and start the real load before the window even exists.
     init() {
         guard auth == .fullAccess else { return }
-        let t = ContinuousClock.now
-        if let cached = SnapshotCache.load() {
-            snap = cached
-            loaded = true
+        // The cache is decoded off the main thread; it's only used if the real load hasn't landed yet.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let t = ContinuousClock.now
+            guard let cached = SnapshotCache.load() else { return }
             perfLog.notice("cache: \(cached.reminders.count) reminders in \(perfMS(t), privacy: .public)")
+            await MainActor.run {
+                guard let self, !self.loaded else { return }
+                self.snap = cached
+                self.loaded = true
+            }
         }
         scheduleReload(delay: 0)
     }
 
+    private var started = false
+
+    /// Observers and the minute timer — once per app run, however many times the root view appears.
     func start() {
+        guard !started else { return }
+        started = true
         perfLog.debug("start(): \(perfMS(self.launched), privacy: .public) after Store init")
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
@@ -169,8 +180,41 @@ final class Store {
 
     private let launched = ContinuousClock.now
 
+    private var loadLoop: Task<Void, Never>?
+    private var reloadAgain = false
+
+    /// At most one load runs; requests during it collapse into a single follow-up load.
+    /// Callers wait until the data includes everything requested before their call.
     func reload() async {
         guard auth == .fullAccess else { return }
+        if let loop = loadLoop {
+            reloadAgain = true
+            await loop.value
+            return
+        }
+        let loop = Task {
+            repeat {
+                reloadAgain = false
+                await loadOnce()
+            } while reloadAgain
+            loadLoop = nil
+        }
+        loadLoop = loop
+        await loop.value
+    }
+
+    /// Re-reads one list's sections (opening a list) without reloading everything.
+    private func refreshSections(_ listID: String) {
+        guard bridgeReadable else { return }
+        let ids = live.filter { $0.listID == listID }.map(\.id)
+        Task {
+            guard let r = await backend.sections(inList: listID, reminderIDs: ids), viewedListID == listID else { return }
+            snap.sections[listID] = r.sections
+            snap.sectionOf = r.sectionOf
+        }
+    }
+
+    private func loadOnce() async {
         let t = ContinuousClock.now
         perfLog.debug("reload begins: \(perfMS(self.launched), privacy: .public) after Store init")
         let since = clock.cal.date(byAdding: .day, value: -completedWindowDays, to: clock.today) ?? .distantPast
@@ -192,12 +236,54 @@ final class Store {
         }
     }
 
+    /// Lookups rebuilt once per data change (snapshot, pending deletes, hidden lists, clock) instead of per render.
+    struct Index {
+        var live: [Reminder] = []
+        var shown: [Reminder] = []
+        var children: [String: [Reminder]] = [:]
+        var openByList: [String: Int] = [:]
+        var loadedByList: [String: Int] = [:]
+        var doneByList: [String: Int] = [:]
+        var smartCounts: [Destination: Int] = [:]
+        var overdue = 0
+        var tags: [(name: String, count: Int)] = []
+    }
+    private(set) var index = Index()
+
+    private func rebuildIndex() {
+        var x = Index()
+        x.live = snap.reminders.values.filter { pendingDeletes[$0.id] == nil }
+        x.shown = x.live.filter { !hiddenLists.contains($0.listID) }
+        var tagCounts: [String: (String, Int)] = [:]
+        for r in x.live {
+            if let p = r.parentID { x.children[p, default: []].append(r) }
+            x.loadedByList[r.listID, default: 0] += 1
+            if r.isCompleted { x.doneByList[r.listID, default: 0] += 1 }
+        }
+        var smart: [Destination: Int] = [.today: 0, .scheduled: 0, .all: 0, .flagged: 0, .urgent: 0, .assigned: 0]
+        for r in x.shown where !r.isCompleted {
+            x.openByList[r.listID, default: 0] += 1
+            smart[.all]! += 1
+            if Smart.inToday(r, clock) { smart[.today]! += 1 }
+            if Smart.isOverdue(r, clock) { x.overdue += 1 }
+            if r.due != nil { smart[.scheduled]! += 1 }
+            if r.extras?.flagged == true { smart[.flagged]! += 1 }
+            if r.extras?.urgent == true { smart[.urgent]! += 1 }
+            if isAssignedToMe(r) { smart[.assigned]! += 1 }
+            for t in r.extras?.tags ?? [] { tagCounts[t.lowercased(), default: (t, 0)].1 += 1 }
+        }
+        x.smartCounts = smart
+        x.tags = tagCounts.values.map { (name: $0.0, count: $0.1) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        index = x
+        updateBadge()
+    }
+
     var badgeCount: Int {
         guard auth == .fullAccess else { return 0 }
         switch badgeMode {
         case .off: return 0
-        case .overdue: return shown.filter { Smart.isOverdue($0, clock) }.count
-        case .overdueAndToday: return shown.filter { Smart.inToday($0, clock) }.count   // == the Today count
+        case .overdue: return index.overdue
+        case .overdueAndToday: return index.smartCounts[.today] ?? 0   // == the Today count
         }
     }
 
@@ -238,11 +324,11 @@ final class Store {
     func supports(_ cap: String) -> Bool { bridgeReadable && snap.accounts.contains { $0.caps.contains(cap) } }
 
     /// Reminders that are not pending deletion.
-    var live: [Reminder] { snap.reminders.values.filter { pendingDeletes[$0.id] == nil } }
+    var live: [Reminder] { index.live }
     /// Live reminders outside hidden lists — what sidebar counts, smart lists, tags and the badge use.
-    var shown: [Reminder] { live.filter { !hiddenLists.contains($0.listID) } }
+    var shown: [Reminder] { index.shown }
 
-    func children(of id: String) -> [Reminder] { live.filter { $0.parentID == id } }
+    func children(of id: String) -> [Reminder] { index.children[id] ?? [] }
 
     func isAssignedToMe(_ r: Reminder) -> Bool {
         guard let a = r.extras?.assigneeID, let me = list(r.listID)?.currentUserParticipantID else { return false }
@@ -280,28 +366,22 @@ final class Store {
 
     var pinnedLists: [RList] { bridgeReadable ? snap.lists.filter { $0.isPinned && !hiddenLists.contains($0.id) } : [] }
 
-    var allTags: [(name: String, count: Int)] {
-        var counts: [String: (String, Int)] = [:]
-        for r in shown where !r.isCompleted {
-            for t in r.extras?.tags ?? [] { counts[t.lowercased(), default: (t, 0)].1 += 1 }
-        }
-        return counts.values.map { (name: $0.0, count: $0.1) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
+    var allTags: [(name: String, count: Int)] { index.tags }
 
     func count(_ d: Destination) -> Int? {
-        let open = shown.filter { !$0.isCompleted }
         switch d {
-        case .today: return open.filter { Smart.inToday($0, clock) }.count
-        case .scheduled: return open.filter { $0.due != nil }.count
-        case .all: return open.count
-        case .flagged: return open.filter { $0.extras?.flagged == true }.count
-        case .urgent: return open.filter { $0.extras?.urgent == true }.count
-        case .assigned: return open.filter(isAssignedToMe).count
-        case .list(let id): return open.filter { $0.listID == id }.count
-        case .group(let id): return open.filter { list($0.listID)?.groupID == id }.count
-        case .tag(let t): return open.filter { $0.extras?.tags.contains { $0.caseInsensitiveCompare(t) == .orderedSame } == true }.count
+        case .today, .scheduled, .all, .flagged, .urgent, .assigned: return index.smartCounts[d] ?? 0
+        case .list(let id): return index.openByList[id] ?? 0
+        case .group(let id): return snap.lists.filter { $0.groupID == id }.reduce(0) { $0 + (index.openByList[$1.id] ?? 0) }
+        case .tag(let t): return index.tags.first { $0.name.caseInsensitiveCompare(t) == .orderedSame }?.count ?? 0
         case .completed: return nil
         }
+    }
+
+    /// completed ÷ loaded for a list's progress pie. ponytail: only within the loaded completed window.
+    func progress(_ listID: String) -> Double {
+        let total = index.loadedByList[listID] ?? 0
+        return total == 0 ? 0 : Double(index.doneByList[listID] ?? 0) / Double(total)
     }
 
     func isAvailable(_ d: Destination) -> Bool {

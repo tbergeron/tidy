@@ -270,8 +270,7 @@ struct ReminderRow: View {
                     Text(parent.title).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
-            if !store.children(of: r.id).isEmpty, row.depth == 0 {
-                let kids = store.children(of: r.id)
+            if row.depth == 0, case let kids = store.children(of: r.id), !kids.isEmpty {
                 Button { toggleCollapsed(r.id) } label: {
                     Image(systemName: store.collapsed.contains(r.id) ? "chevron.right" : "chevron.down").font(.caption2)
                 }

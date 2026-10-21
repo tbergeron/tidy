@@ -131,11 +131,7 @@ struct ListRow: View {
     }
 
     /// completed ÷ total over the loaded window. ponytail: completed reminders older than the window aren't counted.
-    private var progress: Double {
-        let rs = store.live.filter { $0.listID == list.id }
-        guard !rs.isEmpty else { return 0 }
-        return Double(rs.filter(\.isCompleted).count) / Double(rs.count)
-    }
+    private var progress: Double { store.progress(list.id) }
 }
 
 /// Things-style project pie.
