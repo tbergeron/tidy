@@ -390,6 +390,10 @@ struct ReminderMenu: View {
     @Environment(\.undoManager) private var um
 
     var body: some View {
+        items.labelStyle(.titleAndIcon)   // macOS menus drop SF Symbols unless asked to show them
+    }
+
+    @ViewBuilder private var items: some View {
         let one = ids.count == 1 ? store.snap.reminders[ids[0]] : nil
         let locked = ids.allSatisfy(store.locked)
         let rs = ids.compactMap { store.snap.reminders[$0] }
