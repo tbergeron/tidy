@@ -357,10 +357,6 @@ struct ReminderMenu: View {
         let locked = ids.allSatisfy(store.locked)
         Button(one?.isCompleted == true ? "Mark as Not Completed" : "Mark as Completed") { store.toggleComplete(ids, undo: um) }
             .disabled(locked)
-        Menu("Priority") {
-            ForEach(Priority.allCases.reversed(), id: \.self) { p in Button(p.label) { store.setPriority(ids, p, undo: um) } }
-        }
-        .disabled(locked)
         Menu("Due") {
             ForEach(DuePreset.allCases, id: \.self) { p in
                 Button(p.title(store.clock)) {
@@ -375,6 +371,10 @@ struct ReminderMenu: View {
                 store.datePicker = (a, ids)
             }
             Button("Remove Date") { store.setDue(ids, { _ in nil }, undo: um) }
+        }
+        .disabled(locked)
+        Menu("Priority") {
+            ForEach(Priority.allCases.reversed(), id: \.self) { p in Button(p.label) { store.setPriority(ids, p, undo: um) } }
         }
         .disabled(locked)
         Button("Move to…") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
