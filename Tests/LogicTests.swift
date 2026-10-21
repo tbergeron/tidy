@@ -400,3 +400,53 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(parse("Pay may invoice") == nil)
     }
 }
+
+
+/// Lookup index: rebuilt on data changes, used for counts, children and progress.
+@MainActor @Suite struct IndexTests {
+    private func store(_ rs: [Reminder]) -> Store {
+        let s = Store()
+        var snap = Snapshot()
+        snap.lists = [RList(id: "L", title: "L", color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false),
+                      RList(id: "M", title: "M", color: RGBA(r: 1, g: 0, b: 0), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)]
+        for r in rs { snap.reminders[r.id] = r }
+        s.snap = snap
+        s.clock = clock
+        return s
+    }
+
+    @Test func countsChildrenProgress() {
+        var other = reminder("X", due: allDay(19))
+        other.listID = "M"
+        let s = store([reminder("P", due: allDay(21)), reminder("C", parent: "P"), reminder("D", done: true), other])
+        #expect(s.count(.today) == 2)            // P today + X overdue
+        #expect(s.count(.all) == 3)
+        #expect(s.count(.list("L")) == 2)
+        #expect(s.children(of: "P").map(\.id) == ["C"])
+        #expect(s.progress("L") == 1.0 / 3.0)
+        #expect(s.badgeCount == 2 || s.badgeMode != .overdueAndToday)
+    }
+
+    @Test func hidingAListUpdatesCounts() {
+        var other = reminder("X", due: allDay(19))
+        other.listID = "M"
+        let s = store([reminder("P", due: allDay(21)), other])
+        let hidden = s.hiddenLists
+        s.hiddenLists.insert("M")
+        #expect(s.count(.today) == 1 && s.count(.all) == 1)
+        s.hiddenLists = hidden
+        #expect(s.count(.today) == 2)
+    }
+
+    @Test func snapshotChangeRebuilds() {
+        let s = store([reminder("P")])
+        #expect(s.count(.all) == 1)
+        s.snap.reminders["Q"] = reminder("Q")
+        #expect(s.count(.all) == 2)
+    }
+
+    @Test func sectionLookupsOnlyForOpenTopLevel() {
+        let rs = [reminder("P"), reminder("C", parent: "P"), reminder("D", done: true), reminder("O", parent: "elsewhere")]
+        #expect(Set(Backend.needsSection(rs)) == ["P", "O"])
+    }
+}

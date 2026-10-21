@@ -9,7 +9,9 @@ final class Store {
     let backend = Backend()
 
     var auth = EKEventStore.authorizationStatus(for: .reminder)
-    var snap = Snapshot() { didSet { rebuildIndex() } }
+    var snap = Snapshot() { didSet { if !sectionsOnlyChange { rebuildIndex() } } }
+    /// Set while only section metadata changes, which doesn't affect counts or lookups.
+    @ObservationIgnored private var sectionsOnlyChange = false
     var loaded = false
     var clock = Clock.current { didSet { rebuildIndex() } }
 
@@ -179,6 +181,14 @@ final class Store {
     }
 
     private let launched = ContinuousClock.now
+    @ObservationIgnored private var loggedFirstFrame = false
+
+    /// Logs once: time from process start until the window first shows reminders.
+    func noteWindowShown() {
+        guard !loggedFirstFrame, loaded else { return }
+        loggedFirstFrame = true
+        perfLog.notice("window usable: \(String(format: "%.0f ms", processAge() * 1000), privacy: .public) after process start")
+    }
 
     private var loadLoop: Task<Void, Never>?
     private var reloadAgain = false
@@ -206,11 +216,15 @@ final class Store {
     /// Re-reads one list's sections (opening a list) without reloading everything.
     private func refreshSections(_ listID: String) {
         guard bridgeReadable else { return }
-        let ids = live.filter { $0.listID == listID }.map(\.id)
+        let ids = Backend.needsSection(live.filter { $0.listID == listID })
         Task {
             guard let r = await backend.sections(inList: listID, reminderIDs: ids), viewedListID == listID else { return }
-            snap.sections[listID] = r.sections
-            snap.sectionOf = r.sectionOf
+            var s = snap   // one publish, and no index rebuild: sections don't change counts or lookups
+            s.sections[listID] = r.sections
+            s.sectionOf = r.sectionOf
+            sectionsOnlyChange = true
+            snap = s
+            sectionsOnlyChange = false
         }
     }
 

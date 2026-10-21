@@ -3,6 +3,16 @@ import EventKit
 import os
 
 let perfLog = Logger(subsystem: "com.tidyreminders", category: "perf")
+/// Seconds since this process started (kernel start time), for launch measurements.
+func processAge() -> Double {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.size
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return 0 }
+    let start = info.kp_proc.p_un.__p_starttime
+    return Date().timeIntervalSince1970 - (Double(start.tv_sec) + Double(start.tv_usec) / 1e6)
+}
+
 func perfMS(_ since: ContinuousClock.Instant) -> String { String(format: "%.0f ms", (ContinuousClock.now - since) / .milliseconds(1)) }
 
 /// Owns the single EKEventStore and the private bridge. Every EventKit / ReminderKit object stays here;
@@ -172,7 +182,7 @@ actor Backend {
             if let listID {
                 snap.sections[listID] = try bridge.sections(inList: listID).map { RSection(id: $0.identifier, name: $0.name) }
                 if snap.sections[listID]?.isEmpty == false {
-                    let inList = snap.reminders.values.filter { $0.listID == listID }.map(\.id)
+                    let inList = Self.needsSection(snap.reminders.values.filter { $0.listID == listID })
                     snap.sectionOf = try bridge.sectionIDs(forReminders: inList)
                 }
             }
@@ -306,6 +316,14 @@ actor Backend {
         case .eventStoreNotAuthorized: return AppError.notAuthorized
         default: return AppError.eventKit(ns.localizedDescription)
         }
+    }
+
+    /// Only open top-level reminders need their section looked up (one XPC call each): subtasks follow
+    /// their parent's section and completed reminders are drawn in their own group.
+    /// ponytail: per-reminder calls; the bulk REMRemindersListDataView_ListSectionsInvocation needs a spike first.
+    static func needsSection(_ rs: [Reminder]) -> [String] {
+        let ids = Set(rs.map(\.id))
+        return rs.filter { !$0.isCompleted && ($0.parentID.map { !ids.contains($0) } ?? true) }.map(\.id)
     }
 
     /// Sections of one list (and which reminders are in them), for opening a list without a full reload.

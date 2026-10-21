@@ -32,6 +32,7 @@ struct MainView: View {
             ReminderListView(destination: store.destination)
         }
         .overlay(alignment: .bottom) { BannerView() }
+        .onChange(of: store.loaded, initial: true) { _, loaded in if loaded { store.noteWindowShown() } }
         .sheet(isPresented: $store.showNewList) { ListEditor(list: nil) }
         .sheet(item: $store.listToEdit) { ListEditor(list: $0) }
         .sheet(isPresented: $store.showMoveSheet) { MoveSheet(ids: Array(store.selection)) }
