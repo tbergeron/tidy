@@ -84,7 +84,20 @@ final class Store {
 
     // MARK: Lifecycle
 
+    /// Launch: show the last data at once and start the real load before the window even exists.
+    init() {
+        guard auth == .fullAccess else { return }
+        let t = ContinuousClock.now
+        if let cached = SnapshotCache.load() {
+            snap = cached
+            loaded = true
+            perfLog.notice("cache: \(cached.reminders.count) reminders in \(perfMS(t), privacy: .public)")
+        }
+        scheduleReload(delay: 0)
+    }
+
     func start() {
+        perfLog.debug("start(): \(perfMS(self.launched), privacy: .public) after Store init")
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleReload() }
@@ -95,8 +108,8 @@ final class Store {
         observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.auth == .fullAccess else { return }
+                // Asks EventKit to sync; if anything changed it posts EKEventStoreChanged, which reloads.
                 Task { await self.backend.refreshSources() }
-                self.scheduleReload()
             }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -105,7 +118,6 @@ final class Store {
         ticker = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.clock = .current }
         }
-        if auth == .fullAccess { scheduleReload(delay: 0) }
     }
 
     func requestAccess() async {
@@ -123,13 +135,20 @@ final class Store {
         }
     }
 
+    private let launched = ContinuousClock.now
+
     func reload() async {
         guard auth == .fullAccess else { return }
+        let t = ContinuousClock.now
+        perfLog.debug("reload begins: \(perfMS(self.launched), privacy: .public) after Store init")
         let since = clock.cal.date(byAdding: .day, value: -completedWindowDays, to: clock.today) ?? .distantPast
         do {
             snap = try await backend.load(completedSince: since, sectionsFor: viewedListID,
                                           useBridge: bridgeEnabled)
+            perfLog.notice("reload: \(perfMS(t), privacy: .public); since launch: \(perfMS(self.launched), privacy: .public)")
             loaded = true
+            let saved = snap
+            Task.detached(priority: .utility) { SnapshotCache.save(saved) }
             switch destination {   // the viewed list/group was deleted elsewhere
             case .list(let id) where list(id) == nil, .group(let id) where !snap.groups.contains(where: { $0.id == id }):
                 destination = .today

@@ -2,7 +2,7 @@ import Foundation
 
 // Sendable value snapshots. EventKit / ReminderKit objects never leave `Backend`.
 
-struct Reminder: Identifiable, Hashable, Sendable {
+struct Reminder: Identifiable, Hashable, Sendable, Codable {
     let id: String                  // calendarItemIdentifier, uppercased
     var externalID: String?
     var listID: String
@@ -22,13 +22,13 @@ struct Reminder: Identifiable, Hashable, Sendable {
     var parentID: String? { extras?.parentID }
 }
 
-struct Alarm: Hashable, Sendable {
+struct Alarm: Hashable, Sendable, Codable {
     var absolute: Date?
     var relative: TimeInterval?
     var location: LocationAlarm?
 }
 
-struct LocationAlarm: Hashable, Sendable {
+struct LocationAlarm: Hashable, Sendable, Codable {
     var title: String
     var latitude: Double
     var longitude: Double
@@ -36,10 +36,10 @@ struct LocationAlarm: Hashable, Sendable {
     var leaving: Bool
 }
 
-struct Recurrence: Hashable, Sendable {
-    enum Frequency: Int, Sendable, CaseIterable { case daily, weekly, monthly, yearly }
-    struct Weekday: Hashable, Sendable { var day: Int; var week: Int = 0 }   // day 1 = Sunday … 7
-    enum End: Hashable, Sendable { case date(Date), count(Int) }
+struct Recurrence: Hashable, Sendable, Codable {
+    enum Frequency: Int, Sendable, CaseIterable, Codable { case daily, weekly, monthly, yearly }
+    struct Weekday: Hashable, Sendable, Codable { var day: Int; var week: Int = 0 }   // day 1 = Sunday … 7
+    enum End: Hashable, Sendable, Codable { case date(Date), count(Int) }
 
     var frequency: Frequency
     var interval: Int = 1
@@ -51,7 +51,7 @@ struct Recurrence: Hashable, Sendable {
 }
 
 /// Reminders-only data read through the private bridge.
-struct Extras: Hashable, Sendable {
+struct Extras: Hashable, Sendable, Codable {
     var tags: [String] = []
     var flagged = false
     var urgent = false
@@ -63,10 +63,10 @@ struct Extras: Hashable, Sendable {
     var hourly = false
 }
 
-struct ImageInfo: Hashable, Sendable { var width: Int; var height: Int; var uti: String? }
-struct EarlyAlert: Hashable, Sendable { var unit: Int; var count: Int }  // unit 0…4 = min…month (order confirmed in S8)
+struct ImageInfo: Hashable, Sendable, Codable { var width: Int; var height: Int; var uti: String? }
+struct EarlyAlert: Hashable, Sendable, Codable { var unit: Int; var count: Int }  // unit 0…4 = min…month (order confirmed in S8)
 
-struct RList: Identifiable, Hashable, Sendable {
+struct RList: Identifiable, Hashable, Sendable, Codable {
     let id: String                  // calendarIdentifier, uppercased
     var title: String
     var color: RGBA
@@ -85,35 +85,35 @@ struct RList: Identifiable, Hashable, Sendable {
     var currentUserParticipantID: String?   // shared lists: "Assigned to Me" = assignee == this
 }
 
-struct RGroup: Identifiable, Hashable, Sendable {
+struct RGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
     var name: String
     var accountID: String
 }
 
-struct RSection: Identifiable, Hashable, Sendable {
+struct RSection: Identifiable, Hashable, Sendable, Codable {
     let id: String
     var name: String
 }
 
-struct Account: Identifiable, Hashable, Sendable {
+struct Account: Identifiable, Hashable, Sendable, Codable {
     let id: String
     var title: String
     var caps: Set<String> = []       // e.g. "supportsHashtags", from REMAccountCapabilities
     var listOrder: [String] = []     // list/group IDs in sidebar order
 }
 
-struct RGBA: Hashable, Sendable {
+struct RGBA: Hashable, Sendable, Codable {
     var r: Double, g: Double, b: Double, a: Double = 1
 }
 
-struct BridgeStatus: Hashable, Sendable {
+struct BridgeStatus: Hashable, Sendable, Codable {
     var loaded = false
     var readOK = false
     var report: [String] = []
 }
 
-struct Snapshot: Sendable {
+struct Snapshot: Sendable, Codable {
     var accounts: [Account] = []
     var lists: [RList] = []
     var groups: [RGroup] = []
@@ -126,6 +126,24 @@ struct Snapshot: Sendable {
 }
 
 /// One optional per field: nil = untouched, `.some(nil)` = clear. Only present keys are written (R11).
+/// The last loaded Snapshot on disk, shown instantly at launch while the real load runs.
+/// It holds the user's reminders, so it lives in this app's own Application Support folder.
+enum SnapshotCache {
+    static var url: URL {
+        let dir = URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "Tidy", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appending(path: "snapshot.json")
+    }
+    static func load() -> Snapshot? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Snapshot.self, from: data)
+    }
+    static func save(_ snap: Snapshot) {
+        guard let data = try? JSONEncoder().encode(snap) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 struct ReminderEdit: Sendable {
     var title: String?
     var notes: String??

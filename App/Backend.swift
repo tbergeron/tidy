@@ -2,6 +2,9 @@ import CoreLocation
 import EventKit
 import os
 
+let perfLog = Logger(subsystem: "com.tidyreminders", category: "perf")
+func perfMS(_ since: ContinuousClock.Instant) -> String { String(format: "%.0f ms", (ContinuousClock.now - since) / .milliseconds(1)) }
+
 /// Owns the single EKEventStore and the private bridge. Every EventKit / ReminderKit object stays here;
 /// only Sendable values leave. Runs on its own serial queue and never suspends inside a method,
 /// so it is not re-entrant (fetches block this queue, not the cooperative pool).
@@ -9,7 +12,12 @@ actor Backend {
     private let queue = DispatchSerialQueue(label: "ttr.backend")
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    private let ek = EKEventStore()
+    private let ek: EKEventStore = {
+        let t = ContinuousClock.now
+        let s = EKEventStore()
+        perfLog.debug("EKEventStore(): \(perfMS(t), privacy: .public)")
+        return s
+    }()
     private var bridge: TTRBridge?
     private var bridgeTried = false
     private var bridgeReport: [String] = []
@@ -31,6 +39,7 @@ actor Backend {
     func load(completedSince: Date, sectionsFor listID: String?, useBridge: Bool) throws -> Snapshot {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { throw AppError.notAuthorized }
         var snap = Snapshot(completedSince: completedSince)
+        var t = ContinuousClock.now
 
         let calendars = ek.calendars(for: .reminder)
         snap.defaultListID = ek.defaultCalendarForNewReminders()?.calendarIdentifier.uppercased()
@@ -44,11 +53,15 @@ actor Backend {
         }
         snap.accounts = accounts.values.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
 
-        let incomplete = try fetch(ek.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil))
-        let completed = try fetch(ek.predicateForCompletedReminders(withCompletionDateStarting: completedSince, ending: nil, calendars: nil))
-        for r in incomplete + completed { snap.reminders[r.id] = r }
+        perfLog.debug("lists: \(perfMS(t), privacy: .public) (\(snap.lists.count))"); t = .now
+        // Both fetches run at once.
+        let fetched = try fetchAll([ek.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil),
+                                    ek.predicateForCompletedReminders(withCompletionDateStarting: completedSince, ending: nil, calendars: nil)])
+        perfLog.debug("fetch: \(perfMS(t), privacy: .public) (\(fetched[0].count) open, \(fetched[1].count) completed)"); t = .now
+        for r in fetched.joined() { snap.reminders[r.id] = r }
 
         if useBridge { mergeBridge(into: &snap, sectionsFor: listID) }
+        perfLog.notice("bridge: \(perfMS(t), privacy: .public)")
         snap.bridge.report = bridgeReport + snap.bridge.report
 
         return snap
@@ -64,21 +77,31 @@ actor Backend {
         return out
     }
 
-    private func fetch(_ predicate: NSPredicate) throws -> [Reminder] {
-        let box = OSAllocatedUnfairLock<[Reminder]?>(initialState: nil)
-        let done = DispatchSemaphore(value: 0)
-        // Map to Sendable values on EventKit's queue; EKReminder never leaves the callback.
-        let token = ek.fetchReminders(matching: predicate) { @Sendable rems in
-            let mapped = rems.map { $0.compactMap(Backend.map) }
-            box.withLock { $0 = mapped }
-            done.signal()
+    private func fetch(_ predicate: NSPredicate) throws -> [Reminder] { try fetchAll([predicate])[0] }
+
+    /// Runs the fetches concurrently and waits for all of them (30 s cap).
+    private func fetchAll(_ predicates: [NSPredicate]) throws -> [[Reminder]] {
+        let boxes = predicates.map { _ in OSAllocatedUnfairLock<[Reminder]?>(initialState: nil) }
+        let group = DispatchGroup()
+        var tokens: [Any] = []
+        for (i, p) in predicates.enumerated() {
+            group.enter()
+            let box = boxes[i]
+            // Map to Sendable values on EventKit's queue; EKReminder never leaves the callback.
+            tokens.append(ek.fetchReminders(matching: p) { @Sendable rems in
+                let mapped = rems.map { $0.compactMap(Backend.map) }
+                box.withLock { $0 = mapped }
+                group.leave()
+            })
         }
-        if done.wait(timeout: .now() + 30) == .timedOut {
-            ek.cancelFetchRequest(token)   // the completion is never called after cancel
+        if group.wait(timeout: .now() + 30) == .timedOut {
+            tokens.forEach(ek.cancelFetchRequest)   // the completion is never called after cancel
             throw AppError.timeout
         }
-        guard let out = box.withLock({ $0 }) else { throw AppError.eventKit("Couldn't read Reminders.") }
-        return out
+        return try boxes.map {
+            guard let out = $0.withLock({ $0 }) else { throw AppError.eventKit("Couldn't read Reminders.") }
+            return out
+        }
     }
 
     static func map(_ r: EKReminder) -> Reminder? {
@@ -114,13 +137,16 @@ actor Backend {
         guard let bridge else { return }
         snap.bridge.loaded = true
         do {
+            var t = ContinuousClock.now
             let accounts = try bridge.accounts()
+            perfLog.debug("  bridge accounts: \(perfMS(t), privacy: .public)"); t = .now
             for a in accounts {
                 guard let i = snap.accounts.firstIndex(where: { $0.id == a.identifier }) else { continue }
                 snap.accounts[i].caps = a.capabilities
                 snap.accounts[i].listOrder = a.listOrder
             }
             let infos = try bridge.lists()
+            perfLog.debug("  bridge lists: \(perfMS(t), privacy: .public)"); t = .now
             let listIndex = Dictionary(snap.lists.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
             for info in infos {
                 if info.isGroup {
@@ -142,6 +168,7 @@ actor Backend {
                     snap.reminders[info.identifier]?.extras = Self.extras(info)
                 }
             }
+            perfLog.debug("  bridge reminders: \(perfMS(t), privacy: .public)"); t = .now
             if let listID {
                 snap.sections[listID] = try bridge.sections(inList: listID).map { RSection(id: $0.identifier, name: $0.name) }
                 if snap.sections[listID]?.isEmpty == false {
@@ -149,6 +176,7 @@ actor Backend {
                     snap.sectionOf = try bridge.sectionIDs(forReminders: inList)
                 }
             }
+            perfLog.debug("  bridge sections: \(perfMS(t), privacy: .public)")
             snap.bridge.readOK = true
         } catch {
             snap.bridge.report.append("read failed: \(error.localizedDescription)")
