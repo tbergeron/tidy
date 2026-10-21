@@ -10,9 +10,9 @@ final class Store {
 
     var auth = EKEventStore.authorizationStatus(for: .reminder)
     var eventAuth = EKEventStore.authorizationStatus(for: .event)
-    var snap = Snapshot()
+    var snap = Snapshot() { didSet { updateBadge() } }
     var loaded = false
-    var clock = Clock.current
+    var clock = Clock.current { didSet { updateBadge() } }
 
     var destination: Destination = .today {
         didSet {
@@ -45,7 +45,7 @@ final class Store {
     var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere
     @ObservationIgnored var commitOpenCard: (() -> Void)?
 
-    private(set) var pendingDeletes: [String: Date] = [:]
+    private(set) var pendingDeletes: [String: Date] = [:] { didSet { updateBadge() } }
     private(set) var justCompleted: Set<String> = []
 
     // Preferences (app-local; never Reminders data)
@@ -65,6 +65,12 @@ final class Store {
         didSet { UserDefaults.standard.set(bridgeEnabled, forKey: "bridgeEnabled"); scheduleReload() }
     }
     var completedWindowDays = 30 { didSet { scheduleReload() } }
+
+    /// Dock badge, like Reminders' "Badge Count": overdue, optionally plus due today.
+    enum BadgeMode: String, CaseIterable { case overdueAndToday, overdue, off }
+    var badgeMode = BadgeMode(rawValue: UserDefaults.standard.string(forKey: "badgeMode") ?? "") ?? .overdueAndToday {
+        didSet { UserDefaults.standard.set(badgeMode.rawValue, forKey: "badgeMode"); updateBadge() }
+    }
     var calendarAnchor = Date()
 
     struct Draft: Equatable { var listID: String?; var due: DateComponents?; var text = "" }
@@ -138,6 +144,22 @@ final class Store {
         } catch {
             fail(error)
         }
+    }
+
+    var badgeCount: Int {
+        guard auth == .fullAccess else { return 0 }
+        switch badgeMode {
+        case .off: return 0
+        case .overdue: return live.filter { Smart.isOverdue($0, clock) }.count
+        case .overdueAndToday: return live.filter { Smart.inToday($0, clock) }.count   // == the Today count
+        }
+    }
+
+    private func updateBadge() {
+        let n = badgeCount
+        let label = n > 0 ? "\(n)" : nil
+        let tile = NSApplication.shared.dockTile
+        if tile.badgeLabel != label { tile.badgeLabel = label }
     }
 
     /// Ops run one after another so their effects (and undos) apply in order.

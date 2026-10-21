@@ -99,6 +99,11 @@ struct GeneralSettings: View {
     var body: some View {
         @Bindable var store = store
         Form {
+            Picker("Dock badge", selection: $store.badgeMode) {
+                Text("Overdue and due today").tag(Store.BadgeMode.overdueAndToday)
+                Text("Overdue only").tag(Store.BadgeMode.overdue)
+                Text("Off").tag(Store.BadgeMode.off)
+            }
             Toggle("Group Today by time of day", isOn: $store.groupByTime)
             Picker("Load completed reminders from the last", selection: $store.completedWindowDays) {
                 ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
