@@ -367,7 +367,7 @@ struct ReminderMenu: View {
             .disabled(locked)
         Menu("Due") {
             ForEach(DuePreset.allCases, id: \.self) { p in
-                Button(p.title(store.clock)) {
+                Button(p.name) {
                     let d = p.date(store.clock)
                     store.setDue(ids, { Due.components(d, allDay: false, timeZone: $0.due?.timeZone, clock: store.clock) }, undo: um)
                 }

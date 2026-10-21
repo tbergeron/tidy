@@ -77,6 +77,7 @@ struct Sidebar: View {
                 Spacer()
             }
             .padding(10)
+            .background(.bar)   // list rows scroll underneath; without a background they showed through
         }
     }
 

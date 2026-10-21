@@ -22,7 +22,7 @@ struct DatePanel: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 1) {
                 ForEach(DuePreset.allCases, id: \.self) { p in
-                    PanelRow(icon: p.symbol, tint: p.tint, title: p.name(clock), detail: p.detail(clock),
+                    PanelRow(icon: p.symbol, tint: p.tint, title: p.name, detail: p.detail(clock),
                              checked: Due.same(due, preset(p), clock: clock)) {
                         due = preset(p)
                         close()

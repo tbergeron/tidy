@@ -324,8 +324,9 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(DuePreset.inAWeek.date(clock) == at(28, 9))
     }
 
-    @Test func titlesNameTheDay() {
-        #expect(DuePreset.todayMorning.title(clock).hasPrefix("Today at "))
-        #expect(DuePreset.inAWeek.title(clock).hasPrefix("Next Wednesday at "))   // the 21st is a Wednesday
+    @Test func detailsShowWhen() {
+        #expect(DuePreset.inAWeek.name == "Next Week")
+        #expect(DuePreset.inAWeek.detail(clock).contains("28"))      // the date it lands on
+        #expect(DuePreset.tomorrowMorning.detail(clock).hasPrefix("Thu"))
     }
 }

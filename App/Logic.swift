@@ -97,31 +97,24 @@ enum DuePreset: CaseIterable, Sendable {
         return clock.cal.date(bySettingHour: hour, minute: 0, second: 0, of: day)!   // wall clock: DST-safe
     }
 
-    /// "Today", "This Evening", "Tomorrow", "Next Wednesday".
-    func name(_ clock: Clock) -> String {
+    var name: String {
         switch self {
         case .todayMorning: "Today"
         case .thisEvening: "This Evening"
         case .tomorrowMorning: "Tomorrow"
-        case .inAWeek: "Next " + date(clock).formatted(Date.FormatStyle(timeZone: clock.cal.timeZone).weekday(.wide))
+        case .inAWeek: "Next Week"
         }
     }
 
-    /// Trailing detail in the date panel: "9:00 AM", "Thu 9:00 AM", "Oct 28, 9:00 AM".
+    /// Trailing detail in the date panel: "9:00 AM", "Thu 9:00 AM", "Wed, Oct 28, 9:00 AM".
     func detail(_ clock: Clock) -> String {
         let d = date(clock), tz = clock.cal.timeZone
         let time = d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: tz))
         switch self {
         case .todayMorning, .thisEvening: return time
         case .tomorrowMorning: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated)) + " " + time
-        case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).month(.abbreviated).day()) + ", " + time
+        case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated).month(.abbreviated).day()) + ", " + time
         }
-    }
-
-    /// "Today at 9:00 AM", "Next Wednesday at 9:00 AM"… (time in the user's format).
-    func title(_ clock: Clock) -> String {
-        let time = date(clock).formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: clock.cal.timeZone))
-        return "\(name(clock)) at \(time)"
     }
 }
 
