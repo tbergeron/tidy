@@ -292,15 +292,17 @@ private struct Chips: View {
     var body: some View {
         let r = reminder, x = r.extras
         let items: [String] = [
-            r.due.map { Display.duePill($0, clock: store.clock).text },
             RecurrenceMap.describe(r.recurrence, hourly: x?.hourly == true, due: r.due, clock: store.clock).map { "Repeats " + $0.prefix(1).lowercased() + $0.dropFirst() },
             (x?.earlyAlerts ?? []).first.map { earlyText($0) },
             x?.urgent == true ? "Urgent" : nil,
             r.alarms.compactMap(\.location).first.map { ($0.leaving ? "Leaving: " : "Arriving: ") + $0.title },
         ].compactMap { $0 }
-        if !items.isEmpty || !(x?.tags.isEmpty ?? true) || !(x?.urls.isEmpty ?? true) || !(x?.images.isEmpty ?? true) {
+        if r.due != nil || !items.isEmpty || !(x?.tags.isEmpty ?? true) || !(x?.urls.isEmpty ?? true) || !(x?.images.isEmpty ?? true) {
             FlowRow {
                 ForEach(x?.tags ?? [], id: \.self) { Text("#" + $0).chip() }
+                if let due = r.due {
+                    Text(Display.duePill(due, clock: store.clock).text).chip().help(Display.dueFull(due, clock: store.clock))
+                }
                 ForEach(items, id: \.self) { Text($0).chip() }
                 ForEach(x?.urls ?? [], id: \.self) { u in
                     Link(destination: u) { Label(u.host() ?? u.absoluteString, systemImage: "link").chip() }

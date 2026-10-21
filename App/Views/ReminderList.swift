@@ -325,6 +325,7 @@ struct Metadata: View {
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Capsule().fill(.secondary.opacity(0.12)))
                     .foregroundStyle(pill.overdue && !r.isCompleted ? Color.red : .secondary)
+                    .help(Display.dueFull(due, clock: store.clock))
             }
             if showList, let l = store.list(r.listID) {
                 HStack(spacing: 4) {

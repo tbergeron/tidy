@@ -528,6 +528,11 @@ enum Display {
         return (dayText + time, Smart.isOverdue(r, clock))
     }
 
+    /// Tooltip for the pill: "Sunday, October 25, 2026 at 9:00 AM" (no time when all-day).
+    static func dueFull(_ c: DateComponents, clock: Clock) -> String {
+        Due.date(c, clock: clock)?.formatted(date: .complete, time: Due.isAllDay(c) ? .omitted : .shortened) ?? ""
+    }
+
     static func matches(_ r: Reminder, query: String, listTitle: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return true }
