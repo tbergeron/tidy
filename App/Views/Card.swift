@@ -1,0 +1,267 @@
+import SwiftUI
+
+/// Things-style inline editor. Text commits after 1 s idle and on close; discrete controls commit at once.
+/// Only keys changed against `base` are written (R11).
+struct CardView: View {
+    @Environment(Store.self) private var store
+    @Environment(\.undoManager) private var um
+    @State private var base: Reminder
+    @State private var draft: Reminder
+    @State private var showDate = false
+    @State private var confirmRepeatReplace: RepeatPreset?
+    @FocusState private var focus: Field?
+    private enum Field { case title, notes }
+
+    init(reminder: Reminder) {
+        _base = State(initialValue: reminder)
+        _draft = State(initialValue: reminder)
+    }
+
+    private var list: RList? { store.list(draft.listID) }
+    private var locked: Bool { list?.readOnly == true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                CheckBox(done: draft.isCompleted, color: list.map { Color($0.color) } ?? .secondary) {
+                    store.toggleComplete([draft.id], undo: um)
+                }
+                TextField("New Reminder", text: $draft.title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15, weight: .semibold))
+                    .focused($focus, equals: .title)
+                    .onSubmit { focus = .notes }
+            }
+            TextField("Notes", text: Binding(get: { draft.notes ?? "" }, set: { draft.notes = $0 }), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1...12)
+                .focused($focus, equals: .notes)
+                .padding(.leading, 23)
+
+            let kids = store.children(of: draft.id)
+            if !kids.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(kids) { k in
+                        HStack(spacing: 8) {
+                            CheckBox(done: k.isCompleted, round: true) { store.toggleComplete([k.id], undo: um) }
+                            Text(k.title).foregroundStyle(k.isCompleted ? .secondary : .primary)
+                        }
+                    }
+                }
+                .padding(.leading, 23)
+            }
+
+            Chips(reminder: draft).padding(.leading, 23)
+
+            HStack(spacing: 14) {
+                Spacer()
+                Button { showDate = true } label: { Image(systemName: "calendar") }
+                    .help("Date (⌘S)").keyboardShortcut("s")
+                    .popover(isPresented: $showDate, arrowEdge: .bottom) {
+                        DueEditor(due: Binding(get: { draft.due }, set: { setDue($0) }), clock: store.clock)
+                    }
+                repeatMenu
+                Menu {
+                    ForEach(Priority.allCases.reversed(), id: \.self) { p in
+                        Button(p.label) { draft.priority = p.raw; commit() }
+                    }
+                } label: { Image(systemName: "exclamationmark") }
+                    .menuIndicator(.hidden).fixedSize().help("Priority")
+                Menu {
+                    ForEach(store.orderedListIDs.compactMap(store.list).filter { !$0.readOnly }) { l in
+                        Button(l.title) { draft.listID = l.id; commit() }
+                    }
+                } label: { Image(systemName: "list.bullet") }
+                    .menuIndicator(.hidden).fixedSize().help("List")
+                Menu {
+                    Button("Open in Reminders") { store.openInReminders(reminder: draft.id) }
+                    Button("Delete", role: .destructive) { store.requestDelete([draft.id], undo: um) }
+                } label: { Image(systemName: "ellipsis") }
+                    .menuIndicator(.hidden).fixedSize()
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+        }
+        .disabled(locked)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(.background).shadow(color: .black.opacity(0.12), radius: 6, y: 2))
+        .padding(.vertical, 6)
+        .onAppear { focus = .title }
+        .onDisappear { commit() }
+        .onExitCommand { store.editingID = nil }
+        .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
+            try? await Task.sleep(for: .seconds(1))
+            if !Task.isCancelled { commit() }
+        }
+        .onChange(of: store.snap.reminders[base.id]) { _, fresh in
+            guard let fresh else { return }
+            (base, draft) = Edits.rebase(base: base, draft: draft, fresh: fresh)
+        }
+        .confirmationDialog("Replace the current repeat?", isPresented: Binding(
+            get: { confirmRepeatReplace != nil }, set: { if !$0 { confirmRepeatReplace = nil } })
+        ) {
+            Button("Replace") { if let p = confirmRepeatReplace { applyRepeat(p) } }
+        } message: {
+            Text("Private features are off, so an Hourly repeat set in Reminders can't be detected. It would be replaced.")
+        }
+    }
+
+    @ViewBuilder private var repeatMenu: some View {
+        if draft.extras?.hourly == true {
+            Image(systemName: "repeat").help("Hourly repeat — edit in Reminders")
+        } else {
+            Menu {
+                ForEach(RepeatPreset.allCases.filter { $0 != .custom }, id: \.self) { p in
+                    Button(p.rawValue) {
+                        // R7: in public-only mode an existing rule might be Hourly; ask before replacing it.
+                        if !store.bridgeReadable && base.recurrence != nil && p.recurrence() != base.recurrence { confirmRepeatReplace = p } else { applyRepeat(p) }
+                    }
+                }
+            } label: { Image(systemName: "repeat") }
+                .menuIndicator(.hidden).fixedSize().help("Repeat")
+        }
+    }
+
+    private func applyRepeat(_ p: RepeatPreset) {
+        let r = p.recurrence()
+        if r != nil && draft.due == nil { draft.due = Due.components(store.clock.today, allDay: true, timeZone: nil, clock: store.clock) }
+        draft.recurrence = r
+        commit()
+    }
+
+    private func setDue(_ c: DateComponents?) {
+        // Clearing the date of a repeating reminder stops the repeat too (EventKit requires a date).
+        if c == nil { draft.recurrence = nil }
+        draft.due = c
+        commit()
+    }
+
+    private func commit() {
+        guard !locked else { return }
+        store.commitCard(draft: draft, base: base, undo: um)
+        base = draft
+    }
+}
+
+/// Summary chips for what's set (read-only for bridge-only data until M3).
+private struct Chips: View {
+    let reminder: Reminder
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        let r = reminder, x = r.extras
+        let items: [String] = [
+            r.due.map { Display.duePill($0, clock: store.clock).text },
+            RecurrenceMap.describe(r.recurrence, hourly: x?.hourly == true).map { "Repeats " + $0.lowercased() },
+            (x?.earlyAlerts ?? []).first.map { earlyText($0) },
+            x?.urgent == true ? "Urgent" : nil,
+            r.alarms.compactMap(\.location).first.map { ($0.leaving ? "Leaving: " : "Arriving: ") + $0.title },
+        ].compactMap { $0 }
+        if !items.isEmpty || !(x?.tags.isEmpty ?? true) || !(x?.urls.isEmpty ?? true) || !(x?.images.isEmpty ?? true) {
+            FlowRow {
+                ForEach(x?.tags ?? [], id: \.self) { Text("#" + $0).chip() }
+                ForEach(items, id: \.self) { Text($0).chip() }
+                ForEach(x?.urls ?? [], id: \.self) { u in
+                    Link(destination: u) { Label(u.host() ?? u.absoluteString, systemImage: "link").chip() }
+                }
+                ForEach(Array((x?.images ?? []).enumerated()), id: \.offset) { _, img in
+                    Button { store.openInReminders(reminder: r.id) } label: {
+                        Label("\(img.width)×\(img.height)", systemImage: "photo").chip()
+                    }.buttonStyle(.plain).help("Images open in Reminders")
+                }
+            }
+        }
+    }
+
+    private func earlyText(_ a: EarlyAlert) -> String {
+        let units = ["minute", "hour", "day", "week", "month"]
+        let n = abs(a.count), u = units.indices.contains(a.unit) ? units[a.unit] : "?"
+        return "Early: \(n) \(u)\(n == 1 ? "" : "s") before"
+    }
+}
+
+private extension View {
+    func chip() -> some View {
+        font(.caption).padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(.secondary.opacity(0.12)))
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// Minimal wrapping row for chips.
+private struct FlowRow: Layout {
+    var spacing: CGFloat = 6
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.unspecified)
+            if x + size.width > width, x > 0 { x = 0; y += line + spacing; line = 0 }
+            x += size.width + spacing; line = max(line, size.height)
+        }
+        return CGSize(width: width == .infinity ? x : width, height: y + line)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += line + spacing; line = 0 }
+            s.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+            x += size.width + spacing; line = max(line, size.height)
+        }
+    }
+}
+
+struct DueEditor: View {
+    @Binding var due: DateComponents?
+    let clock: Clock
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                quick("Today", clock.today)
+                quick("Tomorrow", Due.tomorrow(clock))
+                quick("This Weekend", Due.thisWeekend(clock))
+                quick("Next Week", Due.nextWeek(clock))
+            }
+            DatePicker("", selection: day, displayedComponents: .date)
+                .datePickerStyle(.graphical).labelsHidden()
+            Toggle("Time", isOn: hasTime)
+            if due.map({ !Due.isAllDay($0) }) == true {
+                DatePicker("", selection: day, displayedComponents: .hourAndMinute).labelsHidden()
+            }
+            if due != nil { Button("Clear Date", role: .destructive) { due = nil } }
+        }
+        .padding(14)
+        .frame(width: 300)
+    }
+
+    private func quick(_ title: String, _ d: Date) -> some View {
+        Button(title) { due = Due.moving(due, toDay: d, clock: clock) }.controlSize(.small)
+    }
+
+    private var day: Binding<Date> {
+        Binding(
+            get: { due.flatMap { Due.date($0, clock: clock) } ?? clock.today },
+            set: { new in
+                let timed = due.map { !Due.isAllDay($0) } ?? false
+                due = Due.components(new, allDay: !timed, timeZone: due?.timeZone, clock: clock)
+            })
+    }
+
+    private var hasTime: Binding<Bool> {
+        Binding(
+            get: { due.map { !Due.isAllDay($0) } ?? false },
+            set: { on in
+                let d = due.flatMap { Due.date($0, clock: clock) } ?? clock.today
+                if on {
+                    let nine = clock.cal.date(bySettingHour: 9, minute: 0, second: 0, of: d) ?? d
+                    due = Due.components(nine, allDay: false, timeZone: nil, clock: clock)
+                } else {
+                    due = Due.components(d, allDay: true, timeZone: nil, clock: clock)
+                }
+            })
+    }
+}

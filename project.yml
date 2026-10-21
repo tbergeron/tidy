@@ -1,0 +1,67 @@
+name: TickTickReminders
+options:
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ABCDE12345
+    CODE_SIGN_STYLE: Manual
+    ENABLE_HARDENED_RUNTIME: YES
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
+    CLANG_ENABLE_OBJC_ARC: YES
+targets:
+  TickTickReminders:
+    type: application
+    platform: macOS
+    sources: [App]
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: TickTickReminders
+        LSApplicationCategoryType: public.app-category.productivity
+        NSRemindersFullAccessUsageDescription: "TickTickReminders shows and edits your Apple Reminders."
+        NSCalendarsFullAccessUsageDescription: "Shows your calendar events next to scheduled reminders (read-only)."
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.ticktickreminders.items
+            UTTypeConformsTo: [public.data]
+            UTTypeDescription: Reminders items
+    entitlements:
+      path: Support/App.entitlements
+      properties:
+        com.apple.security.personal-information.calendars: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.app.dev
+        CODE_SIGN_IDENTITY: "Apple Development"
+        SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/TTRBridge.h
+        ENABLE_RESOURCE_ACCESS_CALENDARS: YES
+        GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.app
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests]
+    dependencies:
+      - target: TickTickReminders
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TickTickReminders.app/Contents/MacOS/TickTickReminders"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ticktickreminders.tests
+schemes:
+  TickTickReminders:
+    build:
+      targets:
+        TickTickReminders: all
+        Tests: [test]
+    test:
+      targets: [Tests]
