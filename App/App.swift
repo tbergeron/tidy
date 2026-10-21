@@ -22,11 +22,11 @@ struct TickTickRemindersApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var store: Store?
 
-    /// Pending deletes are flushed before quitting (R9).
+    /// The open card, the draft, queued ops and pending deletes (R9) are all saved before quitting.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let store, store.hasPendingWork else { return .terminateNow }
+        guard let store else { return .terminateNow }
         Task { @MainActor in
-            await store.flushDeletes()
+            await store.drain()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -68,6 +68,7 @@ struct AppCommands: Commands {
         }
         CommandGroup(after: .sidebar) {
             Button("Show Completed") { store.toggleShowCompleted() }.keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(!store.showCompletedApplies)
             Button("Group Today by Time") { store.groupByTime.toggle() }
             Divider()
             ForEach(Array(store.shortcutDestinations.prefix(9).enumerated()), id: \.offset) { i, d in

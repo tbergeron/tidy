@@ -78,7 +78,7 @@ struct IntegrationTests {
         try await withList { a in
             try await withList { b in
                 let r = try await backend.create(ReminderEdit(title: "mover"), listID: a)
-                let (moved, _) = try await backend.apply(ReminderEdit(listID: b), to: r.id, base: r)
+                let (moved, _, _) = try await backend.apply(ReminderEdit(listID: b), to: r.id, base: r)
                 print("S5: id kept \(moved.id == r.id)")
                 #expect(moved.listID == b)
                 #expect(moved.id == r.id)
@@ -92,7 +92,7 @@ struct IntegrationTests {
             let today = Due.components(Date(), allDay: true, timeZone: nil, clock: clock)
             let r = try await backend.create(ReminderEdit(title: "rep", due: .some(today), recurrence: .some(Recurrence(frequency: .weekly))), listID: list)
             await #expect(throws: AppError.self) { try await backend.apply(ReminderEdit(due: .some(nil)), to: r.id, base: r) }
-            let (cleared, _) = try await backend.apply(ReminderEdit(due: .some(nil), recurrence: .some(nil)), to: r.id, base: r)
+            let (cleared, _, _) = try await backend.apply(ReminderEdit(due: .some(nil), recurrence: .some(nil)), to: r.id, base: r)
             #expect(cleared.due == nil && cleared.recurrence == nil)
         }
     }

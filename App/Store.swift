@@ -14,7 +14,16 @@ final class Store {
     var loaded = false
     var clock = Clock.current
 
-    var destination: Destination = .today { didSet { if oldValue != destination { tagFilter = []; scheduleReload() } } }
+    var destination: Destination = .today {
+        didSet {
+            guard oldValue != destination else { return }
+            flushDraft()
+            selection = []
+            editingID = nil
+            tagFilter = []
+            scheduleReload()
+        }
+    }
     var selection: Set<String> = []
     var editingID: String?
     var draft: Draft?
@@ -26,6 +35,10 @@ final class Store {
     var confirmDeleteIDs: [String]?
     var listToEdit: RList?
     var listToDelete: RList?
+    var listDeleteCount: Int?
+    var pendingCrossMove: (ids: [String], listID: String)?
+    var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere
+    @ObservationIgnored var commitOpenCard: (() -> Void)?
 
     private(set) var pendingDeletes: [String: Date] = [:]
     private(set) var justCompleted: Set<String> = []
@@ -111,7 +124,12 @@ final class Store {
             snap = try await backend.load(completedSince: since, sectionsFor: viewedListID, events: eventRange,
                                           useBridge: bridgeEnabled)
             loaded = true
-            if let id = editingID, snap.reminders[id] == nil { editingID = nil; banner = AppError.notFound.errorDescription }
+            switch destination {   // the viewed list/group was deleted elsewhere
+            case .list(let id) where list(id) == nil, .group(let id) where !snap.groups.contains(where: { $0.id == id }):
+                destination = .today
+            default: break
+            }
+            if let id = editingID, snap.reminders[id] == nil { editingID = nil }
         } catch {
             fail(error)
         }
@@ -163,7 +181,6 @@ final class Store {
         return snap.events.filter { $0.start < e && $0.end > s }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
     }
     var bridgeReadable: Bool { bridgeEnabled && snap.bridge.readOK }
-    var hasPendingWork: Bool { !pendingDeletes.isEmpty }
 
     func list(_ id: String) -> RList? { snap.lists.first { $0.id == id } }
     func account(_ id: String) -> Account? { snap.accounts.first { $0.id == id } }
@@ -173,6 +190,11 @@ final class Store {
     var live: [Reminder] { snap.reminders.values.filter { pendingDeletes[$0.id] == nil } }
 
     func children(of id: String) -> [Reminder] { live.filter { $0.parentID == id } }
+
+    func isAssignedToMe(_ r: Reminder) -> Bool {
+        guard let a = r.extras?.assigneeID, let me = list(r.listID)?.currentUserParticipantID else { return false }
+        return a.caseInsensitiveCompare(me) == .orderedSame
+    }
 
     // Sidebar
     struct SidebarAccount: Identifiable { let account: Account; var entries: [SidebarEntry]; var id: String { account.id } }
@@ -221,7 +243,7 @@ final class Store {
         case .all: return open.count
         case .flagged: return open.filter { $0.extras?.flagged == true }.count
         case .urgent: return open.filter { $0.extras?.urgent == true }.count
-        case .assigned: return open.filter { $0.extras?.assigneeID != nil }.count
+        case .assigned: return open.filter(isAssignedToMe).count
         case .list(let id): return open.filter { $0.listID == id }.count
         case .group(let id): return open.filter { list($0.listID)?.groupID == id }.count
         case .tag(let t): return open.filter { $0.extras?.tags.contains { $0.caseInsensitiveCompare(t) == .orderedSame } == true }.count
@@ -281,7 +303,7 @@ final class Store {
             case .all: return visibleCompletion
             case .flagged: return visibleCompletion && r.extras?.flagged == true
             case .urgent: return visibleCompletion && r.extras?.urgent == true
-            case .assigned: return visibleCompletion && r.extras?.assigneeID != nil
+            case .assigned: return visibleCompletion && isAssignedToMe(r)
             case .completed: return r.isCompleted
             case .calendar: return r.due != nil && visibleCompletion
             case .list(let id): return r.listID == id && visibleCompletion
@@ -308,7 +330,12 @@ final class Store {
                 return RowSection(id: "today-\(b.rawValue)", title: b.title, kind: b == .overdue ? .overdue : .today(b), rows: flat(items))
             }
         case .scheduled:
-            let groups = Dictionary(grouping: rs) { Smart.scheduledBucket($0, clock) ?? .overdue }
+            // Just-completed rows stay in their day for the 1.5 s they remain visible.
+            let groups = Dictionary(grouping: rs) { r -> ScheduledBucket in
+                var x = r
+                x.isCompleted = false
+                return Smart.scheduledBucket(x, clock) ?? .overdue
+            }
             let keys = Set(groups.keys).union(Smart.scheduledDays(clock)).sorted()
             return keys.map { k in
                 let items = groups[k] ?? []
@@ -370,7 +397,8 @@ final class Store {
         var out: [Row] = []
         for r in sorted where r.parentID.map({ !ids.contains($0) }) ?? true {
             out.append(Row(reminder: r, depth: 0))
-            if !collapsed.contains(r.id) { out += (kids[r.id] ?? []).map { Row(reminder: $0, depth: 1) } }
+            // An open card shows its own checklist, so its subtasks aren't drawn twice.
+            if !collapsed.contains(r.id) && r.id != editingID { out += (kids[r.id] ?? []).map { Row(reminder: $0, depth: 1) } }
         }
         return out
     }
@@ -389,59 +417,82 @@ final class Store {
     func newReminderTarget(_ d: Destination) -> (listID: String?, due: DateComponents?) {
         switch d {
         case .list(let id): (id, nil)
-        case .group(let id): (snap.lists.first { $0.groupID == id }?.id, nil)
-        case .today: (nil, Due.components(clock.today, allDay: true, timeZone: nil, clock: clock))
+        case .group(let id): (orderedListIDs.first { list($0)?.groupID == id }, nil)
+        case .today, .scheduled: (nil, Due.components(clock.today, allDay: true, timeZone: nil, clock: clock))
         default: (nil, nil)
         }
     }
 
     // MARK: Reminder ops
 
-    final class UndoToken {}
+    /// Payload is read when undo runs, so the op can replace the provisional inverse with real pre-write values.
+    final class UndoToken {
+        var edits: [(String, ReminderEdit)] = []
+        var guards: [String: Reminder] = [:]
+        var ids: [String] = []
+    }
     /// UndoManager holds targets unowned, so tokens must outlive their actions. ponytail: never pruned (a few bytes each).
     private var undoTokens: [UndoToken] = []
     private func newToken() -> UndoToken { let t = UndoToken(); undoTokens.append(t); return t }
 
-    /// The one edit path: per-item ReminderEdit, undo = inverse edits for the same keys.
-    func applyEdits(_ items: [(String, ReminderEdit)], name: String, undo um: UndoManager?, bases: [String: Reminder] = [:]) {
-        let befores = items.compactMap { id, e in snap.reminders[id].map { ($0, e) } }.filter { !$0.1.isEmpty }
+    func locked(_ id: String) -> Bool { snap.reminders[id].flatMap { list($0.listID) }?.readOnly == true }
+
+    /// The one edit path: per-item ReminderEdit. Undo = inverse edits for the same keys, applied only where the
+    /// value is still what we wrote (`guards`), so undo never clobbers a newer change from another device (R11).
+    func applyEdits(_ items: [(String, ReminderEdit)], name: String, undo um: UndoManager?,
+                    bases: [String: Reminder] = [:], guards: [String: Reminder] = [:], undoable: Bool = true,
+                    onFailure: (@MainActor () -> Void)? = nil) {
+        let befores = items.compactMap { id, e in snap.reminders[id].map { ($0, e) } }
+            .filter { !$0.1.isEmpty && !locked($0.0.id) }
         guard !befores.isEmpty else { return }
         let token = newToken()
+        token.edits = befores.map { b, e in (b.id, Edits.diff(base: Edits.applied(e, to: b), draft: b)) }
+        token.guards = Dictionary(befores.map { b, e in (b.id, Edits.applied(e, to: b)) }, uniquingKeysWith: { a, _ in a })
         let completesRepeating = befores.contains { $0.0.isRepeating && $0.1.isCompleted == true }
-        if !completesRepeating {   // R1: completing a repeating reminder advances it; no undo
-            let inverses = befores.map { b, e in (b.id, Edits.diff(base: Edits.applied(e, to: b), draft: b)) }
-            um?.registerUndo(withTarget: token) { [weak self] _ in self?.applyEdits(inverses, name: name, undo: um) }
+        if undoable && !completesRepeating {   // R1: completing a repeating reminder advances it; no undo
+            um?.registerUndo(withTarget: token) { t in self.applyEdits(t.edits, name: name, undo: um, guards: t.guards) }
             um?.setActionName(name)
         }
         enqueue {
-            var errors: [Error] = []
-            var conflicts: [String] = []
+            var errors: [Error] = [], conflicts: [String] = []
+            var edits: [(String, ReminderEdit)] = [], wrote: [String: Reminder] = [:]
             for (b, e) in befores {
                 do {
-                    let (r, c) = try await self.backend.apply(e, to: b.id, base: bases[b.id])
+                    let (r, before, c) = try await self.backend.apply(e, to: b.id, base: bases[b.id], onlyIfStill: guards[b.id])
                     self.merge(r, replacing: b.id)
                     conflicts += c
+                    edits.append((r.id, Edits.diff(base: r, draft: before)))
+                    wrote[r.id] = r
                 } catch {
                     errors.append(error)
                 }
             }
+            token.edits = edits
+            token.guards = wrote
             if let first = errors.first {
                 self.fail(errors.count > 1 ? "\(errors.count) changes failed: \(first.localizedDescription)" : first.localizedDescription)
-                um?.removeAllActions(withTarget: token)
+                if edits.isEmpty { um?.removeAllActions(withTarget: token) }
+                onFailure?()
             } else if !conflicts.isEmpty {
                 self.banner = "Replaced a change made on another device (\(Set(conflicts).sorted().joined(separator: ", "))). Undo restores it."
             }
         }
     }
 
-    func commitCard(draft: Reminder, base: Reminder, undo um: UndoManager?) {
+    func commitCard(draft: Reminder, base: Reminder, undo um: UndoManager?, onFailure: (@MainActor () -> Void)? = nil) {
         let e = Edits.diff(base: base, draft: draft)
         guard !e.isEmpty else { return }
-        applyEdits([(base.id, e)], name: "Edit", undo: um, bases: [base.id: base])
+        // An hourly rule can't be expressed in EventKit, so an undo would write Daily instead.
+        applyEdits([(base.id, e)], name: "Edit", undo: um, bases: [base.id: base],
+                   undoable: !(base.extras?.hourly == true && e.recurrence != nil), onFailure: onFailure)
     }
 
+    private var completing: Set<String> = []
+
     func toggleComplete(_ ids: [String], undo um: UndoManager?) {
+        // R1 guard: a repeating reminder that was just completed has already advanced; a second click would complete the next one.
         let rs = ids.compactMap { snap.reminders[$0] }
+            .filter { !locked($0.id) && !($0.isRepeating && (completing.contains($0.id) || justCompleted.contains($0.id))) }
         guard let first = rs.first else { return }
         let done = !first.isCompleted
         var targets = rs.filter { $0.isCompleted != done }
@@ -454,42 +505,69 @@ final class Store {
             let keep = targets.map(\.id)
             Task { try? await Task.sleep(for: .seconds(1.5)); justCompleted.subtract(keep) }
         }
+        let reps = targets.filter(\.isRepeating).map(\.id)
+        completing.formUnion(reps)
         applyEdits(targets.map { ($0.id, ReminderEdit(isCompleted: done)) }, name: done ? "Complete" : "Uncomplete", undo: um)
+        if !reps.isEmpty { enqueue { self.completing.subtract(reps) } }
     }
 
     func setDue(_ ids: [String], _ make: (Reminder) -> DateComponents?, undo um: UndoManager?) {
-        applyEdits(ids.compactMap { id in snap.reminders[id].map { (id, ReminderEdit(due: .some(make($0)))) } }, name: "Reschedule", undo: um)
+        // Clearing the date of a repeating reminder is refused by EventKit (R7); the card asks first instead.
+        let items = ids.compactMap { id in snap.reminders[id].map { (id, make($0), $0.isRepeating) } }
+        if items.contains(where: { $0.1 == nil && $0.2 }) { fail(AppError.needsDueForRepeat) }
+        applyEdits(items.filter { !($0.1 == nil && $0.2) }.map { ($0.0, ReminderEdit(due: .some($0.1))) }, name: "Reschedule", undo: um)
     }
 
     func setPriority(_ ids: [String], _ p: Priority, undo um: UndoManager?) {
         applyEdits(ids.map { ($0, ReminderEdit(priority: p.raw)) }, name: "Priority", undo: um)
     }
 
-    func move(_ ids: [String], toList listID: String, undo um: UndoManager?) {
-        // Moving a parent moves its subtasks too; EventKit rejects that (-3002) until the bridge write lands (M3).
-        applyEdits(ids.filter { snap.reminders[$0]?.listID != listID }.map { ($0, ReminderEdit(listID: listID)) }, name: "Move", undo: um)
+    /// A move to another account is a copy in EventKit (new IDs; tags, subtasks, attachments don't follow),
+    /// so it's confirmed, refused for subtask trees, and not undoable (R8).
+    func move(_ ids: [String], toList listID: String, undo um: UndoManager?, confirmed: Bool = false) {
+        guard let target = list(listID), !target.readOnly else { return }
+        let rs = ids.compactMap { snap.reminders[$0] }.filter { $0.listID != listID && !locked($0.id) }
+        let cross = rs.filter { list($0.listID)?.accountID != target.accountID }
+        if !cross.isEmpty {
+            if cross.contains(where: { !children(of: $0.id).isEmpty || $0.parentID != nil }) {
+                fail("Reminders with subtasks can't move to another account. Use Open in Reminders.")
+                return
+            }
+            guard confirmed else { pendingCrossMove = (rs.map(\.id), listID); return }
+        }
+        let crossIDs = Set(cross.map(\.id))
+        applyEdits(rs.filter { !crossIDs.contains($0.id) }.map { ($0.id, ReminderEdit(listID: listID)) }, name: "Move", undo: um)
+        applyEdits(cross.map { ($0.id, ReminderEdit(listID: listID)) }, name: "Move", undo: um, undoable: false)
     }
 
     func create(title: String, listID: String?, due: DateComponents?, undo um: UndoManager?, open: Bool = false) {
-        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
+        create(ReminderEdit(title: title.trimmingCharacters(in: .whitespacesAndNewlines), due: .some(due)), listID: listID, undo: um, open: open)
+    }
+
+    func create(_ edit: ReminderEdit, listID: String?, undo um: UndoManager?, open: Bool = false) {
+        guard !(edit.title ?? "").isEmpty else { return }
+        // Registered now (so the undo stack keeps its order); the id is filled in once the create ran.
+        let token = newToken()
+        um?.registerUndo(withTarget: token) { t in
+            if t.ids.isEmpty { self.enqueue { self.delete(t.ids, undo: um) } } else { self.delete(t.ids, undo: um) }
+        }
+        um?.setActionName("New Reminder")
         enqueue {
             do {
-                let r = try await self.backend.create(ReminderEdit(title: title, due: .some(due)), listID: listID)
+                let r = try await self.backend.create(edit, listID: listID)
                 self.merge(r)
+                token.ids = [r.id]
                 if open { self.selection = [r.id]; self.editingID = r.id }
-                let token = self.newToken()
-                um?.registerUndo(withTarget: token) { _ in self.delete([r.id], undo: um) }
-                um?.setActionName("New Reminder")
             } catch {
                 self.fail(error)
+                um?.removeAllActions(withTarget: token)
             }
         }
     }
 
     /// Hidden at once; really removed after 8 s or on quit, so undo is free inside the window (R9).
     func delete(_ ids: [String], undo um: UndoManager?) {
-        var all = ids.filter { snap.reminders[$0] != nil && pendingDeletes[$0] == nil }
+        var all = ids.filter { snap.reminders[$0] != nil && pendingDeletes[$0] == nil && !locked($0) }
         for id in all { all += children(of: id).map(\.id).filter { !all.contains($0) } }   // subtasks go with the parent
         guard !all.isEmpty else { return }
         let now = Date()
@@ -497,29 +575,34 @@ final class Store {
         selection.subtract(all)
         if let e = editingID, all.contains(e) { editingID = nil }
         let token = newToken()
-        um?.registerUndo(withTarget: token) { [weak self] _ in self?.undelete(all, undo: um) }
+        um?.registerUndo(withTarget: token) { _ in self.undelete(all, undo: um) }
         um?.setActionName("Delete")
         flushTask?.cancel()
         flushTask = Task { try? await Task.sleep(for: .seconds(8)); await flushDeletes(olderThan: 8) }
     }
 
+    private var flushing: Set<String> = []
+
     private func undelete(_ ids: [String], undo um: UndoManager?) {
-        let still = ids.filter { pendingDeletes[$0] != nil }
+        let still = ids.filter { pendingDeletes[$0] != nil && !flushing.contains($0) }
         still.forEach { pendingDeletes[$0] = nil }
         if still.count < ids.count {
             banner = "Some reminders were already deleted. Recover them from Recently Deleted in Reminders."
         }
+        guard !still.isEmpty else { return }
         let token = newToken()
-        um?.registerUndo(withTarget: token) { [weak self] _ in self?.delete(still, undo: um) }
+        um?.registerUndo(withTarget: token) { _ in self.delete(still, undo: um) }
     }
 
     func flushDeletes(olderThan age: TimeInterval = 0) async {
         let now = Date()
         // Children first, so a parent never disappears before its subtasks.
-        let due = pendingDeletes.filter { now.timeIntervalSince($0.value) >= age }.map(\.key)
+        let due = pendingDeletes.filter { now.timeIntervalSince($0.value) >= age && !flushing.contains($0.key) }.map(\.key)
             .sorted { (snap.reminders[$0]?.parentID != nil ? 0 : 1) < (snap.reminders[$1]?.parentID != nil ? 0 : 1) }
         guard !due.isEmpty else { return }
+        flushing.formUnion(due)
         let failed = await backend.delete(due)
+        flushing.subtract(due)
         for id in due {
             pendingDeletes[id] = nil
             if !failed.contains(id) { snap.reminders[id] = nil }
@@ -532,6 +615,7 @@ final class Store {
 
     /// Asks first when a repeating reminder is involved (EventKit deletes the whole series).
     func requestDelete(_ ids: [String], undo um: UndoManager?) {
+        let ids = ids.filter { !locked($0) }
         if ids.contains(where: { snap.reminders[$0]?.isRepeating == true }) { confirmDeleteIDs = ids } else { delete(ids, undo: um) }
     }
 
@@ -540,15 +624,58 @@ final class Store {
         setDue(ids, { Due.moving($0.due, toDay: self.clock.today, clock: self.clock) }, undo: um)
     }
 
+    /// New reminders can only be created where they'll stay visible and writable.
+    var canCreate: Bool {
+        switch destination {
+        case .completed, .calendar, .flagged, .urgent, .assigned, .tag: return false
+        default:
+            let t = newReminderTarget(destination)
+            return list(t.listID ?? snap.defaultListID ?? "")?.readOnly != true
+        }
+    }
+
     func startDraft() {
-        guard destination != .completed, destination != .calendar else { return }
+        guard canCreate else { return }
+        flushDraft()
         let t = newReminderTarget(destination)
         editingID = nil
         draft = Draft(listID: t.listID, due: t.due)
     }
 
+    /// Saves typed draft text (if any) and closes the draft row.
+    func flushDraft() {
+        guard let d = draft else { return }
+        draft = nil
+        create(title: d.text, listID: d.listID, due: d.due, undo: NSApp.keyWindow?.undoManager)
+    }
+
+    /// Quit: commit the open card and draft, finish queued ops, flush pending deletes.
+    func drain() async {
+        commitOpenCard?()
+        flushDraft()
+        await tail?.value
+        await flushDeletes()
+    }
+
+    func saveOrphanedDraft(undo um: UndoManager?) {
+        guard let o = orphanedDraft else { return }
+        orphanedDraft = nil
+        create(ReminderEdit(title: o.title.isEmpty ? "Untitled" : o.title, notes: .some(o.notes), due: .some(o.due)),
+               listID: list(o.listID) != nil ? o.listID : nil, undo: um)
+    }
+
+    var showCompletedApplies: Bool {
+        if case .list = destination { return true }
+        return destination == .calendar
+    }
+
     func toggleShowCompleted() {
-        let key: String = switch destination { case .list(let id), .group(let id): id; default: "smart" }
+        let key: String
+        switch destination {
+        case .list(let id): key = id
+        case .calendar: key = "smart"
+        default: return
+        }
         if showCompleted.contains(key) { showCompleted.remove(key) } else { showCompleted.insert(key) }
     }
 
@@ -573,8 +700,8 @@ final class Store {
     func updateList(_ id: String, title: String? = nil, color: RGBA? = nil, undo um: UndoManager?) {
         guard let old = list(id) else { return }
         let token = newToken()
-        um?.registerUndo(withTarget: token) { [weak self] _ in
-            self?.updateList(id, title: title == nil ? nil : old.title, color: color == nil ? nil : old.color, undo: um)
+        um?.registerUndo(withTarget: token) { _ in
+            self.updateList(id, title: title == nil ? nil : old.title, color: color == nil ? nil : old.color, undo: um)
         }
         um?.setActionName(title != nil ? "Rename List" : "Change Color")
         enqueue {
@@ -583,18 +710,22 @@ final class Store {
         }
     }
 
-    /// Optionally moves the reminders elsewhere first; otherwise EventKit deletes them with the list.
+    /// Shows the delete confirmation with the real count (completed reminders included).
+    func prepareListDelete(_ l: RList) {
+        listDeleteCount = nil
+        listToDelete = l
+        Task { listDeleteCount = try? await backend.reminderCount(inList: l.id) }
+    }
+
+    /// With a target, every reminder (completed too) is moved first and the list is kept if any move fails;
+    /// otherwise EventKit deletes the reminders with the list. Not undoable — confirmed with counts instead (R10).
     func deleteList(_ id: String, moveRemindersTo target: String?) {
-        let ids = live.filter { $0.listID == id && !$0.isCompleted }.map(\.id)
         enqueue {
             do {
-                if let target {
-                    for rid in ids { _ = try await self.backend.apply(ReminderEdit(listID: target), to: rid, base: nil) }
-                }
-                try await self.backend.deleteList(id)
+                try await self.backend.deleteList(id, moveTo: target)
                 if self.destination == .list(id) { self.destination = .today }
-                await self.reload()
-            } catch { self.fail(error); await self.reload() }
+            } catch { self.fail(error) }
+            await self.reload()
         }
     }
 

@@ -57,7 +57,7 @@ actor Backend {
         for r in incomplete + completed { snap.reminders[r.id] = r }
 
         if useBridge { mergeBridge(into: &snap, sectionsFor: listID) }
-        snap.bridge.report = bridgeReport
+        snap.bridge.report = bridgeReport + snap.bridge.report
 
         if let range, EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             snap.events = events(in: range)
@@ -80,7 +80,7 @@ actor Backend {
         let done = DispatchSemaphore(value: 0)
         // Map to Sendable values on EventKit's queue; EKReminder never leaves the callback.
         let token = ek.fetchReminders(matching: predicate) { @Sendable rems in
-            let mapped = (rems ?? []).compactMap(Backend.map)
+            let mapped = rems.map { $0.compactMap(Backend.map) }
             box.withLock { $0 = mapped }
             done.signal()
         }
@@ -88,7 +88,8 @@ actor Backend {
             ek.cancelFetchRequest(token)   // the completion is never called after cancel
             throw AppError.timeout
         }
-        return box.withLock { $0 } ?? []
+        guard let out = box.withLock({ $0 }) else { throw AppError.eventKit("Couldn't read Reminders.") }
+        return out
     }
 
     static func map(_ r: EKReminder) -> Reminder? {
@@ -143,6 +144,7 @@ actor Backend {
                     snap.lists[i].isGroceries = info.isGroceries
                     snap.lists[i].isShared = info.isShared
                     snap.lists[i].manualOrder = info.manualOrder
+                    snap.lists[i].currentUserParticipantID = info.currentUserParticipantID
                 }
             }
             let ids = Array(snap.reminders.keys)
@@ -160,7 +162,7 @@ actor Backend {
             }
             snap.bridge.readOK = true
         } catch {
-            bridgeReport.append("read failed: \(error.localizedDescription)")
+            snap.bridge.report.append("read failed: \(error.localizedDescription)")
             snap.bridge.readOK = false
         }
     }
@@ -174,12 +176,18 @@ actor Backend {
 
     // MARK: Reminder writes (public EventKit)
 
-    /// Applies only the keys present in `edit` (R11). Returns the fresh reminder and keys another device changed since `base`.
-    func apply(_ edit: ReminderEdit, to id: String, base: Reminder?) throws -> (Reminder, conflicts: [String]) {
+    /// Applies only the keys present in `edit` (R11).
+    /// - base: what the user started from; keys another device changed since are reported as conflicts (still written).
+    /// - onlyIfStill: for undo — keys whose current value is no longer what we wrote are skipped.
+    /// Returns the saved reminder, the record just before the write, and the conflicts.
+    func apply(_ edit: ReminderEdit, to id: String, base: Reminder?, onlyIfStill: Reminder? = nil) throws
+        -> (Reminder, before: Reminder, conflicts: [String]) {
         guard let r = ek.calendarItem(withIdentifier: id) as? EKReminder, let fresh = Self.map(r) else { throw AppError.notFound }
+        var edit = edit
+        if let guardValue = onlyIfStill { edit = Edits.removing(Edits.conflicts(edit, base: guardValue, fresh: fresh), from: edit) }
         let conflicts = base.map { Edits.conflicts(edit, base: $0, fresh: fresh) } ?? []
         try write(edit, to: r)
-        return (Self.map(r) ?? fresh, conflicts)
+        return (Self.map(r) ?? fresh, fresh, conflicts)
     }
 
     func create(_ edit: ReminderEdit, listID: String?) throws -> Reminder {
@@ -231,7 +239,7 @@ actor Backend {
         if let t = e.title, t != r.title { r.title = t }
         if let n = e.notes, n != r.notes { r.notes = n }          // only when changed: notes writes flatten rich text
         if let p = e.priority, Priority(raw: p) != Priority(raw: r.priority) { r.priority = Priority(raw: p).raw }
-        if let d = e.due, d != r.dueDateComponents {
+        if let d = e.due, !Due.same(d, r.dueDateComponents) {
             let absolute = (r.alarms ?? []).filter { $0.absoluteDate != nil && $0.structuredLocation == nil }
             let old = absolute.compactMap(\.absoluteDate)
             let new = AlarmPlan.shifted(old, from: r.dueDateComponents, to: d, clock: .current)
@@ -305,9 +313,24 @@ actor Backend {
         do { try ek.saveCalendar(c, commit: true) } catch { c.rollback(); throw Self.mapError(error) }
     }
 
-    /// Deletes the list AND all its reminders (EventKit cascades). Callers confirm with counts first.
-    func deleteList(_ id: String) throws {
+    /// Every reminder in the list, completed ones included (the delete dialog's count).
+    func reminderCount(inList id: String) throws -> Int {
+        guard let c = ek.calendar(withIdentifier: id) else { return 0 }
+        return try fetch(ek.predicateForReminders(in: [c])).count
+    }
+
+    /// Deletes the list AND all its reminders (EventKit cascades). With `moveTo`, every reminder (completed
+    /// included) is moved first; if any move fails the list is kept. Callers confirm with counts first.
+    func deleteList(_ id: String, moveTo target: String? = nil) throws {
         guard let c = ek.calendar(withIdentifier: id) else { return }
+        if let target {
+            let all = try fetch(ek.predicateForReminders(in: [c]))
+            var failed = 0
+            for r in all {   // a parent with subtasks is refused (-3002) → counted as failed, list kept
+                do { _ = try apply(ReminderEdit(listID: target), to: r.id, base: nil) } catch { failed += 1 }
+            }
+            if failed > 0 { throw AppError.eventKit("Moved \(all.count - failed) of \(all.count) reminders; the list was kept.") }
+        }
         do { try ek.removeCalendar(c, commit: true) } catch { throw Self.mapError(error) }
     }
 

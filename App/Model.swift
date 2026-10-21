@@ -82,6 +82,7 @@ struct RList: Identifiable, Hashable, Sendable {
     var isGroceries = false
     var isShared = false
     var manualOrder: [String] = []  // reminder IDs
+    var currentUserParticipantID: String?   // shared lists: "Assigned to Me" = assignee == this
 }
 
 struct RGroup: Identifiable, Hashable, Sendable {

@@ -46,31 +46,51 @@ struct MainView: View {
         } message: {
             Text("Reminders deletes every future occurrence of a repeating reminder. Deleting only this one isn't available yet.")
         }
+        .confirmationDialog("Move to another account?", isPresented: Binding(
+            get: { store.pendingCrossMove != nil }, set: { if !$0 { store.pendingCrossMove = nil } })
+        ) {
+            Button("Move") {
+                if let m = store.pendingCrossMove { store.move(m.ids, toList: m.listID, undo: um, confirmed: true) }
+                store.pendingCrossMove = nil
+            }
+        } message: {
+            Text("Reminders copies reminders moved to another account: tags, flags, sections and attachments won't follow, and the originals go to Recently Deleted. This can't be undone.")
+        }
         .confirmationDialog(deleteListTitle, isPresented: Binding(
             get: { store.listToDelete != nil }, set: { if !$0 { store.listToDelete = nil } })
         ) {
             if let l = store.listToDelete {
-                Button("Delete List and \(openCount(l)) Reminders", role: .destructive) { store.deleteList(l.id, moveRemindersTo: nil) }
-                if let target = store.snap.defaultListID, target != l.id, let t = store.list(target) {
+                Button(store.listDeleteCount.map { "Delete List and \($0) Reminders" } ?? "Delete List and Its Reminders", role: .destructive) {
+                    store.deleteList(l.id, moveRemindersTo: nil)
+                }
+                if let target = store.snap.defaultListID, target != l.id, let t = store.list(target), t.accountID == l.accountID {
                     Button("Move Reminders to “\(t.title)”, then Delete") { store.deleteList(l.id, moveRemindersTo: target) }
                 }
             }
         } message: {
-            Text(store.listToDelete?.id == store.snap.defaultListID
-                 ? "This is your default list. Reminders will pick another default."
-                 : "Deleting a list also deletes its reminders.")
+            Text((store.listToDelete?.id == store.snap.defaultListID ? "This is your default list. Reminders will pick another default. " : "")
+                 + "Deleting a list also deletes its reminders, including completed ones.")
         }
     }
 
     private var deleteListTitle: String { "Delete “\(store.listToDelete?.title ?? "")”?" }
-    private func openCount(_ l: RList) -> Int { store.live.filter { $0.listID == l.id && !$0.isCompleted }.count }
 }
 
 struct BannerView: View {
     @Environment(Store.self) private var store
+    @Environment(\.undoManager) private var um
 
     var body: some View {
-        if let text = store.banner {
+        if let o = store.orphanedDraft {
+            HStack(spacing: 10) {
+                Text("“\(o.title)” was deleted on another device while you were editing it.").lineLimit(2)
+                Button("Save as New Reminder") { store.saveOrphanedDraft(undo: um) }
+                Button("Discard") { store.orphanedDraft = nil }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .glassEffect(.regular, in: .capsule)
+            .padding(.bottom, 16)
+        } else if let text = store.banner {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.circle")
                 Text(text).lineLimit(3)

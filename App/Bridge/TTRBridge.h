@@ -27,6 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readonly) BOOL isGroceries;
 @property (readonly) BOOL isShared;
 @property (readonly, copy) NSArray<NSString *> *manualOrder; // reminder UUIDs
+@property (readonly, copy, nullable) NSString *currentUserParticipantID;
 @end
 
 @interface TTRReminderInfo : NSObject

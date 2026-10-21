@@ -9,6 +9,7 @@ struct CardView: View {
     @State private var draft: Reminder
     @State private var showDate = false
     @State private var confirmRepeatReplace: RepeatPreset?
+    @State private var confirmClearRepeat = false
     @FocusState private var focus: Field?
     private enum Field { case title, notes }
 
@@ -62,6 +63,7 @@ struct CardView: View {
                     .popover(isPresented: $showDate, arrowEdge: .bottom) {
                         DueEditor(due: Binding(get: { draft.due }, set: { setDue($0) }), clock: store.clock)
                     }
+                    .onChange(of: showDate) { _, open in if !open { commit() } }   // one write per popover session
                 repeatMenu
                 Menu {
                     ForEach(Priority.allCases.reversed(), id: \.self) { p in
@@ -71,7 +73,7 @@ struct CardView: View {
                     .menuIndicator(.hidden).fixedSize().help("Priority")
                 Menu {
                     ForEach(store.orderedListIDs.compactMap(store.list).filter { !$0.readOnly }) { l in
-                        Button(l.title) { draft.listID = l.id; commit() }
+                        Button(l.title) { commit(); store.move([draft.id], toList: l.id, undo: um) }   // asks first across accounts
                     }
                 } label: { Image(systemName: "list.bullet") }
                     .menuIndicator(.hidden).fixedSize().help("List")
@@ -88,8 +90,19 @@ struct CardView: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(.background).shadow(color: .black.opacity(0.12), radius: 6, y: 2))
         .padding(.vertical, 6)
-        .onAppear { focus = .title }
-        .onDisappear { commit() }
+        .onAppear {
+            focus = .title
+            store.commitOpenCard = { commit() }
+        }
+        .onDisappear {
+            store.commitOpenCard = nil
+            if store.snap.reminders[base.id] == nil {
+                // Deleted on another device (or here) while open: keep typed text instead of dropping it.
+                if !Edits.diff(base: base, draft: draft).isEmpty && store.pendingDeletes[base.id] == nil { store.orphanedDraft = draft }
+            } else {
+                commit()
+            }
+        }
         .onExitCommand { store.editingID = nil }
         .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
             try? await Task.sleep(for: .seconds(1))
@@ -98,6 +111,16 @@ struct CardView: View {
         .onChange(of: store.snap.reminders[base.id]) { _, fresh in
             guard let fresh else { return }
             (base, draft) = Edits.rebase(base: base, draft: draft, fresh: fresh)
+        }
+        .confirmationDialog("Clearing the date also stops the repeat.", isPresented: $confirmClearRepeat) {
+            Button("Clear Date and Repeat", role: .destructive) {
+                draft.due = nil
+                draft.recurrence = nil
+                showDate = false
+                commit()
+            }
+        } message: {
+            Text(store.bridgeReadable ? "Repeating reminders need a date." : "Repeating reminders need a date. If this repeat is Hourly (set in Reminders), it will be removed.")
         }
         .confirmationDialog("Replace the current repeat?", isPresented: Binding(
             get: { confirmRepeatReplace != nil }, set: { if !$0 { confirmRepeatReplace = nil } })
@@ -131,16 +154,24 @@ struct CardView: View {
         commit()
     }
 
+    /// Updates the draft only; the popover commits once when it closes.
     private func setDue(_ c: DateComponents?) {
-        // Clearing the date of a repeating reminder stops the repeat too (EventKit requires a date).
-        if c == nil { draft.recurrence = nil }
+        if c == nil && draft.isRepeating {
+            // EventKit needs a date for a repeat (R7). Hourly can't be rewritten, so send the user to Reminders.
+            if draft.extras?.hourly == true { store.banner = "This reminder repeats hourly — clear its date in Reminders." }
+            else { confirmClearRepeat = true }
+            return
+        }
         draft.due = c
-        commit()
     }
 
     private func commit() {
-        guard !locked else { return }
-        store.commitCard(draft: draft, base: base, undo: um)
+        guard !locked, store.snap.reminders[base.id] != nil else { return }
+        let id = base.id
+        store.commitCard(draft: draft, base: base, undo: um) {
+            // Failed: fall back to what's stored, so the user's text is retried on the next commit.
+            if let stored = store.snap.reminders[id] { base = stored; draft.listID = stored.listID }
+        }
         base = draft
     }
 }

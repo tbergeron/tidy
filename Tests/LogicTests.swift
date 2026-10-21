@@ -269,3 +269,49 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(CalendarLayout.week(containing: at(21), clock: clock).first == at(18))
     }
 }
+
+@Suite struct ReviewRegressionTests {
+    private let paris = TimeZone(identifier: "Europe/Paris")!
+
+    @Test func movingKeepsLocalTimeForForeignZone() {
+        // 21:00 Paris == 15:00 Montreal. Moved to the 25th it must still show 15:00 here, and stay in Paris time.
+        let c = Due.components(at(21, 15), allDay: false, timeZone: paris, clock: clock)
+        let moved = Due.moving(c, toDay: at(25), clock: clock)
+        #expect(moved.timeZone == paris)
+        #expect(Due.date(moved, clock: clock) == at(25, 15))
+    }
+
+    @Test func todayBucketUsesLocalHour() {
+        let c = Due.components(at(21, 10), allDay: false, timeZone: paris, clock: clock)   // 16:00 Paris, 10:00 here
+        #expect(Smart.todayBucket(reminder(due: c), clock, groupByTime: true) == .morning)
+    }
+
+    @Test func sameIgnoresComponentObjects() {
+        var a = timed(21, 9)
+        a.calendar = nil
+        #expect(Due.same(a, timed(21, 9), clock: clock))
+        #expect(!Due.same(timed(21, 9), timed(21, 10), clock: clock))
+        #expect(!Due.same(allDay(21), timed(21, 0), clock: clock))
+        #expect(Due.same(nil, nil, clock: clock) && !Due.same(nil, allDay(21), clock: clock))
+    }
+
+    @Test func conflictsUsePriorityRanges() {
+        let base = reminder(priority: 1)
+        var fresh = base
+        fresh.priority = 3   // still "high": not a conflict
+        #expect(Edits.conflicts(ReminderEdit(priority: 5), base: base, fresh: fresh).isEmpty)
+    }
+
+    @Test func removingDropsNamedKeys() {
+        let e = Edits.removing(["title", "date"], from: ReminderEdit(title: "x", priority: 1, due: .some(nil)))
+        #expect(e.title == nil && e.due == nil && e.priority == 1)
+    }
+
+    @Test func dropTimeOnSpringForwardDay() {
+        // 2027-03-14 is DST start in Montreal: 02:00 → 03:00. A drop at the 09:00 line must give 09:00.
+        let day = clock.cal.date(from: DateComponents(year: 2027, month: 3, day: 14))!
+        let t = CalendarLayout.dropTime(y: 44 * 9, hourHeight: 44, day: day, clock: clock)
+        #expect(clock.cal.component(.hour, from: t) == 9)
+        #expect(CalendarLayout.wallHours(t, on: day, clock: clock) == 9)
+    }
+}

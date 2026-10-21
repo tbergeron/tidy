@@ -168,7 +168,7 @@ private struct DayColumn: View {
                 ForEach(items, id: \.id) { item in
                     let c = cols[item.id] ?? (0, 1)
                     let w = geo.size.width / CGFloat(c.of)
-                    let y = CGFloat(item.start.timeIntervalSince(start) / 3600) * h
+                    let y = CGFloat(CalendarLayout.wallHours(item.start, on: day, clock: store.clock)) * h   // wall clock: DST-safe
                     let height = max(18, CGFloat(item.end.timeIntervalSince(item.start) / 3600) * h - 1)
                     Group {
                         if let e = events.first(where: { $0.id == item.id }) { EventBlock(event: e) }
@@ -179,7 +179,7 @@ private struct DayColumn: View {
                 }
                 if store.clock.cal.isDate(day, inSameDayAs: store.clock.now) {
                     Rectangle().fill(.red).frame(height: 1.5)
-                        .offset(y: CGFloat(store.clock.now.timeIntervalSince(start) / 3600) * h)
+                        .offset(y: CGFloat(CalendarLayout.wallHours(store.clock.now, on: day, clock: store.clock)) * h)
                 }
             }
             .frame(width: geo.size.width, height: 24 * h, alignment: .topLeading)

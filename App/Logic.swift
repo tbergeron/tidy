@@ -49,13 +49,25 @@ enum Due {
         return clock.cal.startOfDay(for: d)
     }
 
-    /// Same calendar day, keeping the time of `c` if it has one.
+    /// Same local day as `day`, keeping the time of `c` as shown on this Mac; stays in the item's own zone.
     static func moving(_ c: DateComponents?, toDay day: Date, clock: Clock) -> DateComponents {
         guard let c, !isAllDay(c) else { return components(day, allDay: true, timeZone: nil, clock: clock) }
+        let shown = date(c, clock: clock).map { clock.cal.dateComponents([.hour, .minute], from: $0) }
         var parts = clock.cal.dateComponents([.year, .month, .day], from: day)
-        parts.hour = c.hour; parts.minute = c.minute
-        let d = clock.cal.date(from: parts) ?? day
-        return components(d, allDay: false, timeZone: c.timeZone, clock: clock)
+        parts.hour = shown?.hour ?? c.hour
+        parts.minute = shown?.minute ?? c.minute
+        return components(clock.cal.date(from: parts) ?? day, allDay: false, timeZone: c.timeZone, clock: clock)
+    }
+
+    /// Same due as far as Reminders is concerned (ignores the calendar/zone objects EK hands back).
+    static func same(_ a: DateComponents?, _ b: DateComponents?, clock: Clock = .current) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case let (a?, b?):
+            return isAllDay(a) == isAllDay(b) && date(a, clock: clock) == date(b, clock: clock)
+                && (isAllDay(a) || a.timeZone?.identifier == b.timeZone?.identifier)
+        default: return false
+        }
     }
 
     // Reminders' "Mark Due Date As" targets.
@@ -149,7 +161,8 @@ enum Smart {
         guard let c = r.due, let day = Due.day(c, clock: clock) else { return .today }
         if day < clock.today { return .overdue }
         guard groupByTime else { return .today }
-        guard let h = c.hour else { return .allDay }
+        guard c.hour != nil, let d = Due.date(c, clock: clock) else { return .allDay }
+        let h = clock.cal.component(.hour, from: d)   // local hour, even for items in another zone
         return h < 12 ? .morning : h < 17 ? .afternoon : .tonight
     }
 
@@ -312,11 +325,28 @@ enum Edits {
         if (draft.notes ?? "") != (base.notes ?? "") { e.notes = .some(draft.notes?.isEmpty == true ? nil : draft.notes) }
         if draft.isCompleted != base.isCompleted { e.isCompleted = draft.isCompleted }
         if Priority(raw: draft.priority) != Priority(raw: base.priority) { e.priority = draft.priority }
-        if draft.due != base.due { e.due = .some(draft.due) }
+        if !Due.same(draft.due, base.due) { e.due = .some(draft.due) }
         if draft.recurrence != base.recurrence { e.recurrence = .some(draft.recurrence) }
         let loc: (Reminder) -> LocationAlarm? = { $0.alarms.compactMap(\.location).first }
         if loc(draft) != loc(base) { e.location = .some(loc(draft)) }
         if draft.listID != base.listID { e.listID = draft.listID }
+        return e
+    }
+
+    /// `e` without the keys named by `conflicts(…)`.
+    static func removing(_ keys: [String], from e: ReminderEdit) -> ReminderEdit {
+        var e = e
+        for k in keys {
+            switch k {
+            case "title": e.title = nil
+            case "notes": e.notes = nil
+            case "priority": e.priority = nil
+            case "date": e.due = nil
+            case "repeat": e.recurrence = nil
+            case "list": e.listID = nil
+            default: break
+            }
+        }
         return e
     }
 
@@ -342,8 +372,8 @@ enum Edits {
         var out: [String] = []
         if e.title != nil, fresh.title != base.title { out.append("title") }
         if e.notes != nil, (fresh.notes ?? "") != (base.notes ?? "") { out.append("notes") }
-        if e.priority != nil, fresh.priority != base.priority { out.append("priority") }
-        if e.due != nil, fresh.due != base.due { out.append("date") }
+        if e.priority != nil, Priority(raw: fresh.priority) != Priority(raw: base.priority) { out.append("priority") }
+        if e.due != nil, !Due.same(fresh.due, base.due) { out.append("date") }
         if e.recurrence != nil, fresh.recurrence != base.recurrence { out.append("repeat") }
         if e.listID != nil, fresh.listID != base.listID { out.append("list") }
         return out
@@ -406,9 +436,18 @@ enum Display {
 
 enum CalendarLayout {
     /// Time for a drop at `y` points into a day column, snapped to 15 minutes.
+    /// Wall-clock based, so DST days place times where they're drawn.
     static func dropTime(y: CGFloat, hourHeight: CGFloat, day: Date, clock: Clock) -> Date {
         let minutes = max(0, min(24 * 60 - 15, Int((y / hourHeight * 60 / 15).rounded()) * 15))
-        return clock.cal.date(byAdding: .minute, value: minutes, to: clock.cal.startOfDay(for: day))!
+        let start = clock.cal.startOfDay(for: day)
+        return clock.cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: start) ?? start
+    }
+
+    /// Hours since midnight on the wall clock (0 for times before `day`).
+    static func wallHours(_ d: Date, on day: Date, clock: Clock) -> Double {
+        guard d > clock.cal.startOfDay(for: day) else { return 0 }
+        let c = clock.cal.dateComponents([.hour, .minute], from: d)
+        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60
     }
 
     /// Side-by-side columns for overlapping items: id → (column, columns in its overlap cluster).

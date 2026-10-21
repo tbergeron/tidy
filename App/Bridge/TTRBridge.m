@@ -107,7 +107,7 @@ static NSArray<NSString *> *TTRCapabilityKeys(void) {
 @interface TTRListInfo ()
 @property (readwrite, copy) NSString *identifier, *name, *accountID;
 @property (readwrite) BOOL isGroup, isPinned, isGroceries, isShared;
-@property (readwrite, copy, nullable) NSString *parentID, *emblem, *emoji, *sortingStyle;
+@property (readwrite, copy, nullable) NSString *parentID, *emblem, *emoji, *sortingStyle, *currentUserParticipantID;
 @property (readwrite, copy) NSArray<NSString *> *manualOrder;
 @end
 @implementation TTRListInfo
@@ -216,6 +216,8 @@ static NSArray<NSString *> *TTRCapabilityKeys(void) {
     i.isGroceries = TTRBool(l, @"shouldCategorizeGroceryItems");
     i.isShared = TTRBool(l, @"isShared");
     i.manualOrder = i.isGroup ? @[] : TTRUUIDs(TTRValue(l, @"reminderIDsOrdering"));
+    i.currentUserParticipantID = [TTRString(l, @"currentUserShareParticipantID") uppercaseString]
+        ?: TTRUUID(TTRValue(l, @"currentUserShareParticipantID"));
     return i;
 }
 

@@ -17,7 +17,7 @@ struct ReminderListView: View {
     var body: some View {
         @Bindable var store = store
         let sections = store.sections(destination)
-        let draftSection = sections.first { ![.overdue, .completed].contains($0.kind) }?.id
+        let draftSection = draftHost(sections)
 
         List(selection: $store.selection) {
             ListHeader(destination: destination)
@@ -43,6 +43,9 @@ struct ReminderListView: View {
                 } header: {
                     if !section.title.isEmpty { SectionHeader(section: section) }
                 }
+            }
+            if store.draft != nil && draftSection == nil {
+                Section { DraftRow().listRowSeparator(.hidden).selectionDisabled() }
             }
             if sections.allSatisfy({ $0.rows.isEmpty }) && store.draft == nil && store.loaded {
                 Text(store.search.isEmpty ? "No Reminders" : "No Results")
@@ -74,10 +77,15 @@ struct ReminderListView: View {
         .onChange(of: store.selection) { _, new in
             if let e = store.editingID, !new.contains(e) { store.editingID = nil }
         }
+        .onChange(of: Set(sections.flatMap { $0.rows.map(\.id) })) { _, visible in
+            // Rows that left the view (filtered, completed, moved) can't stay selected or open.
+            store.selection.formIntersection(visible)
+            if let e = store.editingID, !visible.contains(e) { store.editingID = nil }
+        }
         .toolbar {
             ToolbarItem {
                 Button { store.startDraft() } label: { Label("New Reminder", systemImage: "plus") }
-                    .disabled(destination == .completed)
+                    .disabled(!store.canCreate)
             }
             ToolbarItem {
                 Menu {
@@ -89,6 +97,16 @@ struct ReminderListView: View {
     }
 
     private var isListView: Bool { if case .list = destination { true } else { false } }
+
+    /// The section that receives the draft row: the target list's section in grouped views, else the first plain one.
+    private func draftHost(_ sections: [Store.RowSection]) -> String? {
+        let target = store.draft?.listID ?? store.snap.defaultListID
+        if let s = sections.first(where: { $0.kind == .list(target ?? "") }) { return s.id }
+        return sections.first { s in
+            if case .list = s.kind { return false }
+            return ![.overdue, .completed].contains(s.kind)
+        }?.id
+    }
     private func dragIDs(_ id: String) -> [String] { store.selection.contains(id) ? Array(store.selection) : [id] }
 }
 
@@ -101,8 +119,8 @@ private struct ListHeader: View {
             Text(store.title(destination))
                 .font(.system(size: 26, weight: .bold))
                 .foregroundStyle(titleColor)
-            let tags = store.tagsInView(destination)
-            if !tags.isEmpty, case .tag = destination {} else if !tags.isEmpty {
+            let tags = Array(Set(store.tagsInView(destination)).union(store.tagFilter)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            if case .tag = destination {} else if !tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         TagChip(name: "All", on: store.tagFilter.isEmpty) { store.tagFilter = [] }
@@ -330,10 +348,13 @@ struct ReminderMenu: View {
 
     var body: some View {
         let one = ids.count == 1 ? store.snap.reminders[ids[0]] : nil
+        let locked = ids.allSatisfy(store.locked)
         Button(one?.isCompleted == true ? "Mark as Not Completed" : "Mark as Completed") { store.toggleComplete(ids, undo: um) }
+            .disabled(locked)
         Menu("Priority") {
             ForEach(Priority.allCases.reversed(), id: \.self) { p in Button(p.label) { store.setPriority(ids, p, undo: um) } }
         }
+        .disabled(locked)
         Menu("Due") {
             Button("Today") { due(store.clock.today) }
             Button("Tomorrow") { due(Due.tomorrow(store.clock)) }
@@ -342,7 +363,8 @@ struct ReminderMenu: View {
             Divider()
             Button("Clear") { store.setDue(ids, { _ in nil }, undo: um) }
         }
-        Button("Move to…") { store.selection = Set(ids); store.showMoveSheet = true }
+        .disabled(locked)
+        Button("Move to…") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
         if let one {
             Divider()
             Button("Show Info") { store.editingID = one.id }
@@ -353,7 +375,7 @@ struct ReminderMenu: View {
             }
         }
         Divider()
-        Button("Delete", role: .destructive) { store.requestDelete(ids, undo: um) }
+        Button("Delete", role: .destructive) { store.requestDelete(ids, undo: um) }.disabled(locked)
     }
 
     private func due(_ day: Date) { store.setDue(ids, { Due.moving($0.due, toDay: day, clock: store.clock) }, undo: um) }
@@ -414,10 +436,7 @@ struct MoveSheet: View {
     }
 
     private func move(to listID: String) {
-        // EventKit copies reminders moved to another account (new IDs; extras may not follow).
-        let crossAccount = ids.compactMap { store.snap.reminders[$0] }.contains { store.list($0.listID)?.accountID != store.list(listID)?.accountID }
-        if crossAccount { store.banner = "Moved to another account: Reminders copies them, so tags, subtasks and attachments may not follow." }
-        store.move(ids, toList: listID, undo: um)
+        store.move(ids, toList: listID, undo: um)   // asks first when it crosses accounts
         dismiss()
     }
 }

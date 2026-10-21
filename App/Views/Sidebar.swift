@@ -40,7 +40,8 @@ struct Sidebar: View {
 
             ForEach(store.sidebarAccounts) { acc in
                 Section(store.sidebarAccounts.count > 1 ? acc.account.title : "Lists") {
-                    ForEach(acc.entries) { entry in
+                    // Pinned lists already appear in the Pinned section.
+                    ForEach(acc.entries.filter { if case .list(let l) = $0 { !(store.bridgeReadable && l.isPinned) } else { true } }) { entry in
                         switch entry {
                         case .list(let l):
                             ListRow(list: l)
@@ -128,7 +129,7 @@ struct ListRow: View {
             }
             Button("Open in Reminders") { store.openInReminders(list: list.id) }
             Divider()
-            Button("Delete List…", role: .destructive) { store.listToDelete = list }.disabled(list.immutable)
+            Button("Delete List…", role: .destructive) { store.prepareListDelete(list) }.disabled(list.immutable)
         }
     }
 
