@@ -199,14 +199,54 @@ actor Backend {
     /// - base: what the user started from; keys another device changed since are reported as conflicts (still written).
     /// - onlyIfStill: for undo — keys whose current value is no longer what we wrote are skipped.
     /// Returns the saved reminder, the record just before the write, and the conflicts.
-    func apply(_ edit: ReminderEdit, to id: String, base: Reminder?, onlyIfStill: Reminder? = nil) throws
+    /// `copyIfRefused`: a move Reminders refuses (-3002, a shared list on either end) is done as copy + delete instead.
+    func apply(_ edit: ReminderEdit, to id: String, base: Reminder?, onlyIfStill: Reminder? = nil, copyIfRefused: Bool = false) throws
         -> (Reminder, before: Reminder, conflicts: [String]) {
         guard let r = ek.calendarItem(withIdentifier: id) as? EKReminder, let fresh = Self.map(r) else { throw AppError.notFound }
         var edit = edit
         if let guardValue = onlyIfStill { edit = Edits.removing(Edits.conflicts(edit, base: guardValue, fresh: fresh), from: edit) }
         let conflicts = base.map { Edits.conflicts(edit, base: $0, fresh: fresh) } ?? []
-        try write(edit, to: r)
+        do {
+            try write(edit, to: r)
+        } catch AppError.moveRejected where copyIfRefused {
+            var rest = edit
+            rest.listID = nil
+            try write(rest, to: r)   // write() rolled the refused save back; keep the other changes
+            guard let l = edit.listID, let cal = ek.calendar(withIdentifier: l) else { throw AppError.notFound }
+            let copy = try copyMove(r, to: cal)
+            return (copy, fresh, conflicts)
+        }
         return (Self.map(r) ?? fresh, fresh, conflicts)
+    }
+
+    /// Copies a reminder into `cal` and deletes the original (it goes to Recently Deleted), in one commit.
+    /// Everything EventKit can write comes along, and urgent through the bridge; Store asks first when
+    /// tags, flag, attachments or early alerts would be lost.
+    private func copyMove(_ r: EKReminder, to cal: EKCalendar) throws -> Reminder {
+        let urgent = bridge.flatMap { try? $0.reminders(withIDs: [r.calendarItemIdentifier]).first?.urgent } ?? false
+        let c = EKReminder(eventStore: ek)
+        c.calendar = cal
+        c.title = r.title
+        c.notes = r.notes
+        c.priority = r.priority
+        c.timeZone = r.timeZone
+        c.dueDateComponents = r.dueDateComponents
+        c.recurrenceRules = r.recurrenceRules?.compactMap { $0.copy() as? EKRecurrenceRule }
+        for a in r.alarms ?? [] { if let a = a.copy() as? EKAlarm { c.addAlarm(a) } }
+        if r.isCompleted { c.isCompleted = true; c.completionDate = r.completionDate }
+        do {
+            try ek.save(c, commit: false)
+            try ek.remove(r, commit: false)
+            try ek.commit()
+        } catch {
+            c.rollback()
+            r.rollback()
+            throw Self.mapError(error)
+        }
+        let id = c.calendarItemIdentifier.uppercased()
+        if urgent { try? bridge?.setUrgent(true, reminder: id) }
+        guard let out = reminders([id], useBridge: bridge != nil).first ?? Self.map(c) else { throw AppError.notFound }
+        return out
     }
 
     func create(_ edit: ReminderEdit, listID: String?) throws -> Reminder {

@@ -44,7 +44,7 @@ final class Store {
     var listToDelete: RList?
     var datePicker: (anchor: String, ids: [String])?   // "Pick a Date…": popover on the anchor row
     var listDeleteCount: Int?
-    var pendingCrossMove: (ids: [String], listID: String)?
+    var pendingCrossMove: (ids: [String], listID: String, title: String, message: String)?
     var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere
     @ObservationIgnored var commitOpenCard: (() -> Void)?
     @ObservationIgnored var cancelOpenCard: (() -> Void)?
@@ -616,7 +616,7 @@ final class Store {
     /// value is still what we wrote (`guards`), so undo never clobbers a newer change from another device (R11).
     func applyEdits(_ items: [(String, ReminderEdit)], name: String, undo um: UndoManager?,
                     bases: [String: Reminder] = [:], guards: [String: Reminder] = [:], undoable: Bool = true,
-                    onFailure: (@MainActor () -> Void)? = nil) {
+                    copyMoves: Bool = false, onFailure: (@MainActor () -> Void)? = nil) {
         let befores = items.compactMap { id, e in snap.reminders[id].map { ($0, e) } }
             .filter { !$0.1.isEmpty && !locked($0.0.id) }
         guard !befores.isEmpty else { return }
@@ -625,7 +625,7 @@ final class Store {
         token.guards = Dictionary(befores.map { b, e in (b.id, Edits.applied(e, to: b)) }, uniquingKeysWith: { a, _ in a })
         let completesRepeating = befores.contains { $0.0.isRepeating && $0.1.isCompleted == true }
         if undoable && !completesRepeating {   // R1: completing a repeating reminder advances it; no undo
-            um?.registerUndo(withTarget: token) { t in self.applyEdits(t.edits, name: name, undo: um, guards: t.guards) }
+            um?.registerUndo(withTarget: token) { t in self.applyEdits(t.edits, name: name, undo: um, guards: t.guards, copyMoves: copyMoves) }
             um?.setActionName(name)
         }
         enqueue {
@@ -633,7 +633,7 @@ final class Store {
             var edits: [(String, ReminderEdit)] = [], wrote: [String: Reminder] = [:]
             for (b, e) in befores {
                 do {
-                    let (r, before, c) = try await self.backend.apply(e, to: b.id, base: bases[b.id], onlyIfStill: guards[b.id])
+                    let (r, before, c) = try await self.backend.apply(e, to: b.id, base: bases[b.id], onlyIfStill: guards[b.id], copyIfRefused: copyMoves)
                     self.merge(r, replacing: b.id)
                     conflicts += c
                     edits.append((r.id, Edits.diff(base: r, draft: before)))
@@ -742,10 +742,30 @@ final class Store {
                 fail("Reminders with subtasks can't move to another account. Use Open in Reminders.")
                 return
             }
-            guard confirmed else { pendingCrossMove = (rs.map(\.id), listID); return }
+            guard confirmed else {
+                pendingCrossMove = (rs.map(\.id), listID, "Move to another account?",
+                                    "Reminders copies reminders moved to another account: tags, flags, sections and attachments won't follow, and the originals go to Recently Deleted. This can't be undone.")
+                return
+            }
+        }
+        // Reminders refuses moves into or out of a shared list; those are copied there and the original deleted.
+        let copied = bridgeReadable ? rs.filter { target.isShared || list($0.listID)?.isShared == true } : []
+        if copied.contains(where: { !children(of: $0.id).isEmpty || $0.parentID != nil }) {
+            fail("Reminders with subtasks can't move into or out of a shared list. Use Open in Reminders.")
+            return
+        }
+        let lossy = copied.contains { r in
+            guard let x = r.extras else { return false }
+            return !x.tags.isEmpty || x.flagged || !x.urls.isEmpty || !x.images.isEmpty || !x.earlyAlerts.isEmpty || x.hourly || x.assigneeID != nil
+        }
+        if lossy && !confirmed {
+            pendingCrossMove = (rs.map(\.id), listID, "Copy to “\(target.title)”?",
+                                "Reminders can't move reminders into or out of a shared list, so Tidy copies them there and moves the originals to Recently Deleted. Tags, flags, attachments, early alerts and assignees won't come along.")
+            return
         }
         let crossIDs = Set(cross.map(\.id))
-        applyEdits(rs.filter { !crossIDs.contains($0.id) }.map { ($0.id, ReminderEdit(listID: listID)) }, name: "Move", undo: um)
+        applyEdits(rs.filter { !crossIDs.contains($0.id) }.map { ($0.id, ReminderEdit(listID: listID)) }, name: "Move", undo: um,
+                   copyMoves: bridgeReadable)
         applyEdits(cross.map { ($0.id, ReminderEdit(listID: listID)) }, name: "Move", undo: um, undoable: false)
     }
 

@@ -53,7 +53,7 @@ struct MainView: View {
         } message: {
             Text("They keep their time of day. You can undo this with ⌘Z.")
         }
-        .confirmationDialog("Move to another account?", isPresented: Binding(
+        .confirmationDialog(store.pendingCrossMove?.title ?? "", isPresented: Binding(
             get: { store.pendingCrossMove != nil }, set: { if !$0 { store.pendingCrossMove = nil } })
         ) {
             Button("Move") {
@@ -61,7 +61,7 @@ struct MainView: View {
                 store.pendingCrossMove = nil
             }
         } message: {
-            Text("Reminders copies reminders moved to another account: tags, flags, sections and attachments won't follow, and the originals go to Recently Deleted. This can't be undone.")
+            Text(store.pendingCrossMove?.message ?? "")
         }
         .confirmationDialog(deleteListTitle, isPresented: Binding(
             get: { store.listToDelete != nil }, set: { if !$0 { store.listToDelete = nil } })
