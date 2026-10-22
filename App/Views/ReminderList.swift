@@ -43,9 +43,7 @@ struct ReminderListView: View {
                             }
                         }
                         .listRowSeparator(.hidden)
-                        .dropDestination(for: DragItems.self) { items, _ in
-                            store.drop(items.flatMap(\.reminderIDs), on: section.kind, undo: um)
-                        }
+                        .moveDrop(section.kind, store: store, undo: um)
                     }
                     if section.id == draftSection { newRows }
                 } header: {
@@ -233,9 +231,22 @@ private struct SectionHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)   // the whole heading row is the drop target
         .contentShape(Rectangle())
         .background(targeted ? Color.accentColor.opacity(0.12) : .clear, in: .rect(cornerRadius: 4))
-        .dropDestination(for: DragItems.self) { items, _ in
-            store.drop(items.flatMap(\.reminderIDs), on: section.kind, undo: um)
-        } isTargeted: { targeted = $0 }
+        .moveDrop(section.kind, store: store, undo: um) { targeted = $0 }
+    }
+}
+
+extension View {
+    /// Only a list's heading and rows take drops (moving the reminders to that list); day and time headings don't.
+    @ViewBuilder func moveDrop(_ kind: Store.RowSection.Kind, store: Store, undo um: UndoManager?,
+                               targeted: @escaping (Bool) -> Void = { _ in }) -> some View {
+        if case .list(let lid) = kind {
+            dropDestination(for: DragItems.self) { items, _ in
+                store.move(items.flatMap(\.reminderIDs), toList: lid, undo: um)
+                return true
+            } isTargeted: { targeted($0) }
+        } else {
+            self
+        }
     }
 }
 

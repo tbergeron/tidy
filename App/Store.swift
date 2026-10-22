@@ -724,15 +724,6 @@ final class Store {
 
     /// A move to another account is a copy in EventKit (new IDs; tags, subtasks, attachments don't follow),
     /// so it's confirmed, refused for subtask trees, and not undoable (R8).
-    /// A drop on a section's heading or one of its rows: a list's section moves there, a Scheduled day reschedules.
-    func drop(_ ids: [String], on kind: RowSection.Kind, undo um: UndoManager?) -> Bool {
-        switch kind {
-        case .day(let day): setDue(ids, { Due.moving($0.due, toDay: day, clock: self.clock) }, undo: um); return true
-        case .list(let lid): move(ids, toList: lid, undo: um); return true
-        default: return false
-        }
-    }
-
     func move(_ ids: [String], toList listID: String, undo um: UndoManager?, confirmed: Bool = false) {
         guard let target = list(listID), !target.readOnly else { return }
         let rs = ids.compactMap { snap.reminders[$0] }.filter { $0.listID != listID && !locked($0.id) }
