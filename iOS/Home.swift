@@ -25,7 +25,7 @@ struct MainView: View {
         }
         .onChange(of: selected) { _, d in if let d { store.destination = d } }
         .onChange(of: store.destination) { _, d in if selected != nil || sizeClass == .regular { selected = d } }
-        .onChange(of: store.openToday) { selected = .today }
+        .onChange(of: store.openRequested) { selected = store.destination }
         .onChange(of: store.loaded, initial: true) { _, loaded in if loaded { store.noteWindowShown() } }
         .sheet(isPresented: $store.showNewList) { ListEditor(list: nil) }
         .sheet(item: $store.listToEdit) { ListEditor(list: $0) }
@@ -259,7 +259,7 @@ struct SettingsScreen: View {
                         ForEach([7, 30, 90, 365], id: \.self) { Text("Last \($0) days").tag($0) }
                     }
                 }
-                HiddenFromTodaySection()
+                HiddenFromScheduleSection()
                 Section("Smart Lists") {
                     ForEach(Store.smartDestinations.filter(store.isAvailable), id: \.self) { d in
                         let t = store.title(d)

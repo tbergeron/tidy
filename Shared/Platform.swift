@@ -24,7 +24,7 @@ import WidgetKit
         if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
     static let privacySettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!
-    static func todayChanged(_ today: [Reminder]) {}
+    static func widgetsChanged(_ items: [Reminder]) {}
     static let sharedDefaults: UserDefaults? = nil
     #else
     /// Settings the widget needs too (hidden lists, hidden from Today).
@@ -52,12 +52,12 @@ import WidgetKit
     }
     static let privacySettings = URL(string: UIApplication.openSettingsURLString)!
 
-    /// The Today widget reloads only when what it shows changed.
-    private static var lastToday: Int?
-    static func todayChanged(_ today: [Reminder]) {
-        let key = Set(today).hashValue
-        guard key != lastToday else { return }
-        lastToday = key
+    /// The Today and Scheduled widgets reload only when what they show changed.
+    private static var lastItems: Int?
+    static func widgetsChanged(_ items: [Reminder]) {
+        let key = Set(items).hashValue
+        guard key != lastItems else { return }
+        lastItems = key
         WidgetCenter.shared.reloadAllTimelines()
     }
     #endif

@@ -5,44 +5,71 @@ import WidgetKit
 
 @main
 struct TidyWidgets: WidgetBundle {
-    var body: some Widget { TodayWidget() }
+    var body: some Widget {
+        TodayWidget()
+        ScheduledWidget()
+    }
+}
+
+/// Which smart list a widget shows.
+enum WidgetView: String {
+    case today, scheduled
+
+    var title: String { self == .today ? "Today" : "Scheduled" }
+    var icon: (name: String, color: Color) { self == .today ? ("star.fill", .yellow) : ("calendar", .red) }
+
+    /// Same rules as the app: Today = due today + overdue; Scheduled = everything with a date.
+    func includes(_ r: Reminder, clock: Clock) -> Bool { self == .today ? Smart.inToday(r, clock) : r.due != nil }
 }
 
 /// Today (overdue + due today) like Reminders' widget, but the count sits in a header row so the reminders get
 /// the full width. Tapping a circle completes the reminder; tapping a title opens it in Tidy.
 struct TodayWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "Today", provider: TodayProvider()) { TodayWidgetView(entry: $0) }
+        StaticConfiguration(kind: "Today", provider: TodayProvider(view: .today)) { TodayWidgetView(entry: $0) }
             .configurationDisplayName("Today")
             .description("Overdue and due today, with room for long titles.")
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
+/// Everything with a date, soonest first (overdue on top), each with its day.
+struct ScheduledWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "Scheduled", provider: TodayProvider(view: .scheduled)) { TodayWidgetView(entry: $0) }
+            .configurationDisplayName("Scheduled")
+            .description("Upcoming reminders, soonest first, with room for long titles.")
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
 struct TodayEntry: TimelineEntry {
     var date: Date
+    var view: WidgetView
     var items: [Reminder]
     var colors: [String: Color] = [:]   // list ID → list color, for the circles
     var access = true
 }
 
 struct TodayProvider: TimelineProvider {
+    let view: WidgetView
+
     func placeholder(in context: Context) -> TodayEntry {
         let titles = ["Water the plants", "Call the dentist", "Buy milk", "Pay rent", "Book flights", "Gym"]
-        return TodayEntry(date: .now, items: titles.enumerated().map { i, t in
+        return TodayEntry(date: .now, view: view, items: titles.enumerated().map { i, t in
             Reminder(id: "\(i)", listID: "", title: t, isCompleted: false, priority: 0, due: nil, alarms: [])
         })
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
-        Task { completion(context.isPreview ? placeholder(in: context) : await Self.load()) }
+        Task { completion(context.isPreview ? placeholder(in: context) : await Self.load(view)) }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         Task {
-            let entry = await Self.load()
+            let entry = await Self.load(view)
             // Timed reminders turn red when they pass and the day rolls over at midnight; the app also
-            // reloads the widget whenever Today changes.
+            // reloads the widgets whenever Today changes.
             let clock = Clock.current
             let midnight = clock.cal.date(byAdding: .day, value: 1, to: clock.today) ?? .now
             completion(Timeline(entries: [entry], policy: .after(min(midnight, .now.addingTimeInterval(30 * 60)))))
@@ -51,13 +78,13 @@ struct TodayProvider: TimelineProvider {
 
     /// Reads Reminders directly (public EventKit; the widget doesn't load the private bridge), minus the lists and
     /// reminders hidden in the app (shared through the App Group).
-    static func load() async -> TodayEntry {
+    static func load(_ view: WidgetView) async -> TodayEntry {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
-            return TodayEntry(date: .now, items: [], access: false)
+            return TodayEntry(date: .now, view: view, items: [], access: false)
         }
         let store = EKEventStore()
         let clock = Clock.current
-        let end = clock.cal.date(byAdding: .day, value: 1, to: clock.today)
+        let end = view == .today ? clock.cal.date(byAdding: .day, value: 1, to: clock.today) : nil
         let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: end, calendars: nil)
         let rems: [EKReminder] = await withCheckedContinuation { c in
             store.fetchReminders(matching: predicate) { c.resume(returning: $0 ?? []) }
@@ -66,11 +93,11 @@ struct TodayProvider: TimelineProvider {
         for cal in store.calendars(for: .reminder) { colors[cal.calendarIdentifier.uppercased()] = Color(cgColor: cal.cgColor) }
         let shared = UserDefaults(suiteName: "group.com.brainpad.tidy")
         let hiddenLists = Set(shared?.stringArray(forKey: "hiddenLists") ?? [])
-        let hiddenFromToday = Set(shared?.stringArray(forKey: "hiddenFromToday") ?? [])
-        let today = rems.compactMap(Reminder.init).filter {
-            Smart.inToday($0, clock) && !hiddenLists.contains($0.listID) && !hiddenFromToday.contains($0.id)
+        let hiddenFromSchedule = Set(shared?.stringArray(forKey: "hiddenFromToday") ?? [])
+        let items = rems.compactMap(Reminder.init).filter {
+            view.includes($0, clock: clock) && !hiddenLists.contains($0.listID) && !hiddenFromSchedule.contains($0.id)
         }
-        return TodayEntry(date: .now, items: Sorting.smart(today, clock: clock), colors: colors)
+        return TodayEntry(date: .now, view: view, items: Sorting.smart(items, clock: clock), colors: colors)
     }
 }
 
@@ -116,7 +143,7 @@ struct TodayWidgetView: View {
                 Spacer(minLength: 0)
             } else if entry.items.isEmpty {
                 Spacer(minLength: 0)
-                Label("All done for today", systemImage: "checkmark.circle")
+                Label(entry.view == .today ? "All done for today" : "Nothing scheduled", systemImage: "checkmark.circle")
                     .font(.subheadline).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             } else {
@@ -125,13 +152,13 @@ struct TodayWidgetView: View {
             }
         }
         .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
-        .widgetURL(URL(string: "tidy://today"))
+        .widgetURL(URL(string: "tidy://\(entry.view.rawValue)"))
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "star.fill").foregroundStyle(.yellow).widgetAccentable()
-            Text("Today").font(.headline)
+            Image(systemName: entry.view.icon.name).foregroundStyle(entry.view.icon.color).widgetAccentable()
+            Text(entry.view.title).font(.headline)
             Spacer(minLength: 4)
             Text("\(entry.items.count)").font(.title3.weight(.bold)).monospacedDigit()
                 .foregroundStyle(entry.items.contains { Smart.isOverdue($0, clock) } ? Color.red : .primary)
@@ -149,7 +176,7 @@ struct TodayWidgetView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Complete \(r.title)")
             }
-            Link(destination: URL(string: "tidy://reminder/\(r.id)")!) {
+            Link(destination: URL(string: "tidy://\(entry.view.rawValue)/\(r.id)")!) {
                 HStack(spacing: 6) {
                     if Priority(raw: r.priority) != .none {
                         Text(Priority(raw: r.priority).marks).fontWeight(.bold).foregroundStyle(.orange)
@@ -170,11 +197,12 @@ struct TodayWidgetView: View {
         .frame(height: 20)
     }
 
-    /// Today: the time (red once it's passed), nothing when all-day. Earlier days: "Yesterday", "Oct 20".
+    /// Today widget, due today: the time (red once it's passed), nothing when all-day. Otherwise the day and time,
+    /// as in the app ("Yesterday", "Tomorrow 9:00 AM", "Oct 28").
     private func when(_ r: Reminder) -> (text: String, overdue: Bool)? {
         guard let due = r.due, let day = Due.day(due, clock: clock) else { return nil }
         let overdue = Smart.isOverdue(r, clock)
-        guard day == clock.today else { return (Display.duePill(due, clock: clock).text, overdue) }
+        guard entry.view == .today && day == clock.today else { return (Display.duePill(due, clock: clock).text, overdue) }
         guard !Due.isAllDay(due), let d = Due.date(due, clock: clock) else { return nil }
         return (d.formatted(date: .omitted, time: .shortened), overdue)
     }

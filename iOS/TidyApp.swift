@@ -25,12 +25,12 @@ struct TidyApp: App {
         }
     }
 
-    /// Widget taps: tidy://today, tidy://reminder/<id>.
+    /// Widget taps: tidy://today or tidy://scheduled, plus /<reminder id> to open that reminder.
     private func open(_ url: URL) {
         guard url.scheme == "tidy" else { return }
-        store.destination = .today
-        store.openToday += 1
-        if url.host() == "reminder", let id = url.pathComponents.dropFirst().first, store.snap.reminders[id] != nil {
+        store.destination = url.host() == "scheduled" ? .scheduled : .today
+        store.openRequested += 1
+        if let id = url.pathComponents.dropFirst().first, store.snap.reminders[id] != nil {
             store.editingID = id
         }
     }

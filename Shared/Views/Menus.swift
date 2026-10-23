@@ -49,9 +49,9 @@ struct ReminderMenu: View {
         }
         .disabled(locked)
         Button("Move to…", systemImage: "folder") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
-        let hidden = !ids.isEmpty && ids.allSatisfy(store.hiddenFromToday.contains)
-        Button(hidden ? "Show in Today" : "Hide from Today", systemImage: hidden ? "star" : "star.slash") {
-            store.setHiddenFromToday(ids, !hidden, undo: um)
+        let hidden = !ids.isEmpty && ids.allSatisfy(store.hiddenFromSchedule.contains)
+        Button(hidden ? "Show in Schedule" : "Hide from Schedule", systemImage: hidden ? "eye" : "eye.slash") {
+            store.setHiddenFromSchedule(ids, !hidden, undo: um)
         }
         if let one {
             Divider()

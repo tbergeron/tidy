@@ -548,26 +548,27 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
     }
 }
 
-/// "Hide from Today": out of Today (view, count, overdue), still in its list; undo puts it back.
+/// "Hide from Schedule": out of Today and Scheduled (views, counts, overdue), still in its list; undo puts it back.
 @MainActor @Suite struct HideFromTodayTests {
     @Test func hiddenLeavesTodayOnly() {
         let s = Store()
-        let saved = s.hiddenFromToday
-        defer { s.hiddenFromToday = saved }
-        s.hiddenFromToday = []
+        let saved = s.hiddenFromSchedule
+        defer { s.hiddenFromSchedule = saved }
+        s.hiddenFromSchedule = []
         s.clock = clock
         var snap = Snapshot()
         snap.lists = [RList(id: "L", title: "L", color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)]
         snap.reminders = ["T": reminder("T", due: allDay(21)), "O": reminder("O", due: allDay(19))]
         s.snap = snap
-        #expect(s.count(.today) == 2 && s.overdueIDs == ["O"])
+        #expect(s.count(.today) == 2 && s.count(.scheduled) == 2 && s.overdueIDs == ["O"])
         let um = UndoManager()
         um.groupsByEvent = false
         um.beginUndoGrouping()
-        s.setHiddenFromToday(["O"], true, undo: um)
+        s.setHiddenFromSchedule(["O"], true, undo: um)
         um.endUndoGrouping()
-        #expect(s.count(.today) == 1 && s.overdueIDs.isEmpty)
+        #expect(s.count(.today) == 1 && s.count(.scheduled) == 1 && s.overdueIDs.isEmpty)
         #expect(s.sections(.today).flatMap(\.rows).map(\.id) == ["T"])
+        #expect(s.sections(.scheduled).flatMap(\.rows).map(\.id) == ["T"])
         #expect(s.sections(.list("L")).flatMap(\.rows).map(\.id).contains("O"))
         um.undo()
         #expect(s.count(.today) == 2)
