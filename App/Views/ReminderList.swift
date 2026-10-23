@@ -6,6 +6,7 @@ struct ReminderListView: View {
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
     @FocusState private var listFocused: Bool
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         @Bindable var store = store
@@ -91,20 +92,21 @@ struct ReminderListView: View {
             store.selection.formIntersection(visible)
             if let e = store.editingID, !visible.contains(e) { store.editingID = nil }
         }
+        // Right-aligned: + and ⋯, then the system search field (it shrinks to a button in a narrow window).
         .toolbar {
-            ToolbarItem {
+            ToolbarItem(placement: .primaryAction) {
                 Button { store.startCompose() } label: { Label("New Reminder", systemImage: "plus") }
                     .disabled(!store.canCreate)
             }
-            ToolbarItem {
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     ViewOptions(destination: destination)
                 } label: { Label("View", systemImage: "ellipsis.circle") }
             }
-            ToolbarItem {
-                SearchField(text: $store.search).frame(width: 180)
-            }
         }
+        .searchable(text: $store.search, placement: .toolbar, prompt: "Search")
+        .searchFocused($searchFocused)
+        .onReceive(NotificationCenter.default.publisher(for: .tidyFocusSearch)) { _ in searchFocused = true }   // ⌘F
         .navigationTitle(store.title(destination))
     }
 

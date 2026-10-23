@@ -125,6 +125,9 @@ struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     private let clock = Clock.current
 
+    /// "tidy", or "tidy-dev" for the Mac Debug build, so taps open the copy the widget belongs to.
+    private static let scheme = Bundle.main.object(forInfoDictionaryKey: "TidyURLScheme") as? String ?? "tidy"
+
     #if os(macOS)
     private static let background = Color(nsColor: .windowBackgroundColor)
     #else
@@ -158,7 +161,7 @@ struct TodayWidgetView: View {
             }
         }
         .containerBackground(for: .widget) { Self.background }
-        .widgetURL(URL(string: "tidy://\(entry.view.rawValue)"))
+        .widgetURL(URL(string: "\(Self.scheme)://\(entry.view.rawValue)"))
     }
 
     private var header: some View {
@@ -182,7 +185,7 @@ struct TodayWidgetView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Complete \(r.title)")
             }
-            Link(destination: URL(string: "tidy://\(entry.view.rawValue)/\(r.id)")!) {
+            Link(destination: URL(string: "\(Self.scheme)://\(entry.view.rawValue)/\(r.id)")!) {
                 HStack(spacing: 6) {
                     if Priority(raw: r.priority) != .none {
                         Text(Priority(raw: r.priority).marks).fontWeight(.bold).foregroundStyle(.orange)

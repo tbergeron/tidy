@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Tidy</string>
+	<string>$(TIDY_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 			<string>com.tidyreminders.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>tidy</string>
+				<string>$(TIDY_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
@@ -36,7 +36,9 @@
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Tidy shows and edits your Apple Reminders.</string>
 	<key>TidyAppGroup</key>
-	<string>$(TeamIdentifierPrefix)com.brainpad.tidy</string>
+	<string>$(TIDY_APP_GROUP)</string>
+	<key>TidyURLScheme</key>
+	<string>$(TIDY_URL_SCHEME)</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
