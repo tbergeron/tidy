@@ -83,6 +83,9 @@ struct CheckBox: View {
                 if done { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white) }
             }
             .frame(width: round ? 13 : 15, height: round ? 13 : 15)
+            // The empty box is only an outline, and a plain button is hit-tested on what it draws, so only the 1 pt
+            // border took clicks (the rest selected the row). Make the whole box plus a margin clickable.
+            .contentShape(Rectangle().inset(by: -5))
             .contentTransition(.symbolEffect(.replace))
             .animation(.snappy, value: done)
         }
