@@ -36,7 +36,7 @@ struct Metadata: View {
         let r = reminder, x = r.extras
         HStack(spacing: 6) {
             ForEach(x?.tags ?? [], id: \.self) { t in
-                Text(t).font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
+                Text(t).font(.caption).lineLimit(1).fixedSize().padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Capsule().strokeBorder(.secondary.opacity(0.5)))
             }
             Group {
@@ -52,6 +52,7 @@ struct Metadata: View {
             if let due = r.due {
                 let pill = Display.duePill(due, clock: store.clock)
                 Text(pill.text).font(.caption)
+                    .lineLimit(1).fixedSize()   // in a narrow window the title truncates, not the date
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Capsule().fill(.secondary.opacity(0.12)))
                     .foregroundStyle(pill.overdue && !r.isCompleted ? Color.red : .secondary)

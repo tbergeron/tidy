@@ -15,7 +15,7 @@ struct RootView: View {
                 DeniedView()
             }
         }
-        .frame(minWidth: 760, minHeight: 480)
+        .frame(minWidth: 360, minHeight: 360)   // narrow is fine with the sidebar hidden
     }
 }
 
@@ -30,6 +30,7 @@ struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
         } detail: {
             ReminderListView(destination: store.destination)
+                .navigationSplitViewColumnWidth(min: 320, ideal: 560)
         }
         .overlay(alignment: .bottom) { BannerView() }
         .onChange(of: store.loaded, initial: true) { _, loaded in if loaded { store.noteWindowShown() } }
