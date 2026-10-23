@@ -15,7 +15,7 @@ struct AppCommands: Commands {
             Button("Find…") { NotificationCenter.default.post(name: .tidyFocusSearch, object: nil) }.keyboardShortcut("f")
         }
         CommandMenu("Reminder") {
-            Button("Show Info") { store.editingID = store.selection.first }.keyboardShortcut("i").disabled(store.selection.count != 1)
+            Button("Show Details") { store.editingID = store.selection.first }.keyboardShortcut("i").disabled(store.selection.count != 1)
             Button("Mark as Completed") { store.toggleComplete(ids, undo: um) }.keyboardShortcut("c", modifiers: [.command, .shift]).disabled(none)
             Menu("Priority") {
                 ForEach(Priority.allCases.reversed(), id: \.self) { p in

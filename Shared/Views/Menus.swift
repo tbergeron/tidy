@@ -14,9 +14,6 @@ struct ReminderMenu: View {
         let one = ids.count == 1 ? store.snap.reminders[ids[0]] : nil
         let locked = ids.allSatisfy(store.locked)
         let rs = ids.compactMap { store.snap.reminders[$0] }
-        Button(one?.isCompleted == true ? "Mark as Not Completed" : "Mark as Completed",
-               systemImage: one?.isCompleted == true ? "circle" : "checkmark.circle") { store.toggleComplete(ids, undo: um) }
-            .disabled(locked)
         Menu("Due", systemImage: "calendar") {
             ForEach(DuePreset.allCases, id: \.self) { p in
                 Button(p.name, systemImage: p.symbol) {
@@ -33,14 +30,6 @@ struct ReminderMenu: View {
             Button("Remove Date", systemImage: "xmark.circle") { store.setDue(ids, { _ in nil }, undo: um) }
         }
         .disabled(locked)
-        if store.bridgeReadable {
-            let urgent = !rs.isEmpty && rs.allSatisfy { $0.extras?.urgent == true }
-            Button(urgent ? "Remove Urgent" : "Mark as Urgent", systemImage: urgent ? "alarm.waves.left.and.right.fill" : "alarm.waves.left.and.right") {
-                store.setUrgent(ids, !urgent, undo: um)
-            }
-            .disabled(!rs.contains(where: store.canSetUrgent))
-            .help("Needs a date with a time")
-        }
         Menu("Priority", systemImage: "exclamationmark") {
             ForEach(Priority.allCases.reversed(), id: \.self) { p in
                 Toggle(p.label, isOn: Binding(get: { one.map { Priority(raw: $0.priority) == p } ?? false },
@@ -49,15 +38,23 @@ struct ReminderMenu: View {
         }
         .disabled(locked)
         Button("Move to…", systemImage: "folder") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
+        if store.bridgeReadable {
+            let urgent = !rs.isEmpty && rs.allSatisfy { $0.extras?.urgent == true }
+            Button(urgent ? "Remove Urgent" : "Mark as Urgent", systemImage: urgent ? "alarm.waves.left.and.right.fill" : "alarm.waves.left.and.right") {
+                store.setUrgent(ids, !urgent, undo: um)
+            }
+            .disabled(!rs.contains(where: store.canSetUrgent))
+            .help("Needs a date with a time")
+        }
+        Divider()
         let hidden = !ids.isEmpty && ids.allSatisfy(store.hiddenFromSchedule.contains)
         Button(hidden ? "Show in Schedule" : "Hide from Schedule", systemImage: hidden ? "eye" : "eye.slash") {
             store.setHiddenFromSchedule(ids, !hidden, undo: um)
         }
         if let one {
             Divider()
-            Button("Show Info", systemImage: "info.circle") { store.editingID = one.id }
+            Button("Show Details", systemImage: "info.circle") { store.editingID = one.id }
             Button("Open in Reminders", systemImage: "arrow.up.forward.app") { store.openInReminders(reminder: one.id) }
-            Button("Copy Link", systemImage: "link") { Platform.copy("x-apple-reminderkit://REMCDReminder/\(one.id)") }
         }
         Divider()
         Button("Delete", systemImage: "trash", role: .destructive) { store.requestDelete(ids, undo: um) }.disabled(locked)
