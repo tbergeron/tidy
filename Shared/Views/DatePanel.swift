@@ -45,9 +45,10 @@ struct DatePanel: View {
                 presets
                     .padding(6)
                     .background(RoundedRectangle(cornerRadius: 22).fill(.background.secondary))
+                TimeRow(due: $due, clock: clock, showField: false)   // quick times, between presets and the calendar
                 VStack(alignment: .leading, spacing: 14) {
                     grid
-                    TimeRow(due: $due, clock: clock)
+                    TimeRow(due: $due, clock: clock, showPills: false)
                 }
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 22).fill(.background.secondary))
@@ -257,11 +258,19 @@ private struct DayCell: View {
 private struct TimeRow: View {
     @Binding var due: DateComponents?
     let clock: Clock
+    var showField = true
+    var showPills = true
     private static let quickHours = [9, 12, 15, 18, 21]
 
     var body: some View {
         let timed = due.map { !Due.isAllDay($0) } ?? false
         VStack(alignment: .leading, spacing: PanelMetrics.timeGap) {
+            if showField { field(timed) }
+            if showPills { pills(timed) }
+        }
+    }
+
+    private func field(_ timed: Bool) -> some View {
             HStack(spacing: 8) {
                 Image(systemName: "clock").foregroundStyle(.secondary).frame(width: 18)
                 if timed {
@@ -275,11 +284,14 @@ private struct TimeRow: View {
                     Button { setTime(nil) } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).foregroundStyle(.tertiary).help("Remove time")
                 } else {
-                    Text("No time — pick one below").foregroundStyle(.tertiary)
+                    Text(showPills ? "No time — pick one below" : "No time — pick one above").foregroundStyle(.tertiary)
                     Spacer()
                 }
             }
             .frame(height: 22)
+    }
+
+    private func pills(_ timed: Bool) -> some View {
             HStack(spacing: PanelMetrics.pillGap) {
                 ForEach(Self.quickHours, id: \.self) { h in
                     let selected = timed && (due.flatMap { Due.date($0, clock: clock) }.map {
@@ -297,7 +309,6 @@ private struct TimeRow: View {
                     .buttonStyle(.plain)
                 }
             }
-        }
     }
 
     private var day: Date { due.flatMap { Due.date($0, clock: clock) }.map { clock.cal.startOfDay(for: $0) } ?? clock.today }
