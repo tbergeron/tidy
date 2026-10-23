@@ -66,10 +66,32 @@ final class Store {
     var hiddenLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenLists") ?? []) {
         didSet {
             UserDefaults.standard.set(Array(hiddenLists), forKey: "hiddenLists")
+            Platform.sharedDefaults?.set(Array(hiddenLists), forKey: "hiddenLists")
             rebuildIndex()
             if case .list(let id) = destination, hiddenLists.contains(id) { destination = .today }
         }
     }
+    /// Reminders kept out of Today (its view, count, overdue and the badge), still shown everywhere else.
+    /// By ID, so a repeating reminder stays hidden as it advances (app-local; also read by the iOS widget).
+    var hiddenFromToday = Set(UserDefaults.standard.stringArray(forKey: "hiddenFromToday") ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(hiddenFromToday), forKey: "hiddenFromToday")
+            Platform.sharedDefaults?.set(Array(hiddenFromToday), forKey: "hiddenFromToday")
+            rebuildIndex()
+            Platform.todayChanged(shown.filter(inToday))
+        }
+    }
+
+    /// Due today or overdue, and not hidden from Today.
+    func inToday(_ r: Reminder) -> Bool { Smart.inToday(r, clock) && !hiddenFromToday.contains(r.id) }
+
+    func setHiddenFromToday(_ ids: [String], _ hide: Bool, undo um: UndoManager?) {
+        let token = newToken()
+        um?.registerUndo(withTarget: token) { _ in self.setHiddenFromToday(ids, !hide, undo: um) }
+        um?.setActionName(hide ? "Hide from Today" : "Show in Today")
+        if hide { hiddenFromToday.formUnion(ids) } else { hiddenFromToday.subtract(ids) }
+    }
+
     /// Sidebar order chosen by dragging (app-local): smart-list titles, and list/group IDs.
     var smartOrder = UserDefaults.standard.stringArray(forKey: "smartOrder") ?? [] {
         didSet { UserDefaults.standard.set(smartOrder, forKey: "smartOrder") }
@@ -142,6 +164,8 @@ final class Store {
     func start() {
         guard !started else { return }
         started = true
+        Platform.sharedDefaults?.set(Array(hiddenLists), forKey: "hiddenLists")   // for the widget
+        Platform.sharedDefaults?.set(Array(hiddenFromToday), forKey: "hiddenFromToday")
         perfLog.debug("start(): \(perfMS(self.launched), privacy: .public) after Store init")
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
@@ -263,7 +287,7 @@ final class Store {
             snap = fresh
             perfLog.notice("reload: \(perfMS(t), privacy: .public); since launch: \(perfMS(self.launched), privacy: .public)")
             loaded = true
-            Platform.todayChanged(shown.filter { Smart.inToday($0, clock) })
+            Platform.todayChanged(shown.filter(inToday))
             // Every list's sections in the background (viewed list first), so opening a list shows its headers
             // at once; the cache is saved after, so the next launch has them too.
             sectionsTask?.cancel()
@@ -313,8 +337,8 @@ final class Store {
         for r in x.shown where !r.isCompleted {
             x.openByList[r.listID, default: 0] += 1
             smart[.all]! += 1
-            if Smart.inToday(r, clock) { smart[.today]! += 1 }
-            if Smart.isOverdue(r, clock) { x.overdue += 1 }
+            if inToday(r) { smart[.today]! += 1 }
+            if Smart.isOverdue(r, clock) && !hiddenFromToday.contains(r.id) { x.overdue += 1 }
             if r.due != nil { smart[.scheduled]! += 1 }
             if r.extras?.flagged == true { smart[.flagged]! += 1 }
             if r.extras?.urgent == true { smart[.urgent]! += 1 }
@@ -474,7 +498,7 @@ final class Store {
         shown.filter { r in
             let visibleCompletion = includeCompleted || !r.isCompleted || justCompleted.contains(r.id)
             switch d {
-            case .today: return (!r.isCompleted || justCompleted.contains(r.id)) && (Smart.inToday(r, clock) || justCompleted.contains(r.id) && r.due != nil)
+            case .today: return (!r.isCompleted || justCompleted.contains(r.id)) && (inToday(r) || justCompleted.contains(r.id) && r.due != nil)
             case .scheduled: return (!r.isCompleted || justCompleted.contains(r.id)) && r.due != nil
             case .all: return visibleCompletion
             case .flagged: return visibleCompletion && r.extras?.flagged == true
@@ -855,7 +879,7 @@ final class Store {
 
     /// Overdue = due on an earlier day (what the Overdue section shows).
     var overdueIDs: [String] {
-        shown.filter { !$0.isCompleted && !locked($0.id) && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
+        shown.filter { !$0.isCompleted && !locked($0.id) && !hiddenFromToday.contains($0.id) && ($0.due.flatMap { Due.day($0, clock: clock) } ?? .distantFuture) < clock.today }.map(\.id)
     }
 
     /// Asks first (the dialog is in MainView).

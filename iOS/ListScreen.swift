@@ -67,7 +67,7 @@ struct ListScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { note in
             // iOS has no ⌘Z: offer Undo for the actions that remove or move things out of view.
             guard let u = note.object as? UndoManager, u === um, u.canUndo,
-                  ["Delete", "Complete", "Move", "Reschedule"].contains(u.undoActionName) else { return }
+                  ["Delete", "Complete", "Move", "Reschedule", "Hide from Today"].contains(u.undoActionName) else { return }
             toast = u.undoActionName
         }
         .onChange(of: Set(sections.flatMap { $0.rows.map(\.id) })) { _, visible in
@@ -267,5 +267,6 @@ private struct UndoToast: View {
         }
     }
 
-    private static let past = ["Delete": "Deleted", "Complete": "Completed", "Move": "Moved", "Reschedule": "Rescheduled"]
+    private static let past = ["Delete": "Deleted", "Complete": "Completed", "Move": "Moved", "Reschedule": "Rescheduled",
+                               "Hide from Today": "Hidden from Today"]
 }

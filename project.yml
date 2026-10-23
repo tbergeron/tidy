@@ -76,6 +76,10 @@ targets:
             UTTypeConformsTo: [public.data]
             UTTypeDescription: Reminders items
         ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Support/iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.brainpad.tidy]
     dependencies:
       - target: TidyWidget
     settings:
@@ -105,6 +109,10 @@ targets:
         NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Support/Widget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.brainpad.tidy]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.brainpad.tidy.widget

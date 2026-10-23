@@ -259,6 +259,7 @@ struct SettingsScreen: View {
                         ForEach([7, 30, 90, 365], id: \.self) { Text("Last \($0) days").tag($0) }
                     }
                 }
+                HiddenFromTodaySection()
                 Section("Smart Lists") {
                     ForEach(Store.smartDestinations.filter(store.isAvailable), id: \.self) { d in
                         let t = store.title(d)

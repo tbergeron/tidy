@@ -25,7 +25,10 @@ import WidgetKit
     }
     static let privacySettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!
     static func todayChanged(_ today: [Reminder]) {}
+    static let sharedDefaults: UserDefaults? = nil
     #else
+    /// Settings the widget needs too (hidden lists, hidden from Today).
+    static let sharedDefaults = UserDefaults(suiteName: "group.com.brainpad.tidy")
     static let didBecomeActive = UIApplication.didBecomeActiveNotification
     static let didWake = (center: NotificationCenter.default, name: UIApplication.willEnterForegroundNotification)
     static var undoManager: UndoManager? {

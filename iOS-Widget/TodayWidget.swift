@@ -49,8 +49,8 @@ struct TodayProvider: TimelineProvider {
         }
     }
 
-    /// Reads Reminders directly (public EventKit; the widget doesn't load the private bridge).
-    /// ponytail: lists hidden in the app still show here; sharing that setting needs an App Group.
+    /// Reads Reminders directly (public EventKit; the widget doesn't load the private bridge), minus the lists and
+    /// reminders hidden in the app (shared through the App Group).
     static func load() async -> TodayEntry {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
             return TodayEntry(date: .now, items: [], access: false)
@@ -64,7 +64,12 @@ struct TodayProvider: TimelineProvider {
         }
         var colors: [String: Color] = [:]
         for cal in store.calendars(for: .reminder) { colors[cal.calendarIdentifier.uppercased()] = Color(cgColor: cal.cgColor) }
-        let today = rems.compactMap(Reminder.init).filter { Smart.inToday($0, clock) }
+        let shared = UserDefaults(suiteName: "group.com.brainpad.tidy")
+        let hiddenLists = Set(shared?.stringArray(forKey: "hiddenLists") ?? [])
+        let hiddenFromToday = Set(shared?.stringArray(forKey: "hiddenFromToday") ?? [])
+        let today = rems.compactMap(Reminder.init).filter {
+            Smart.inToday($0, clock) && !hiddenLists.contains($0.listID) && !hiddenFromToday.contains($0.id)
+        }
         return TodayEntry(date: .now, items: Sorting.smart(today, clock: clock), colors: colors)
     }
 }

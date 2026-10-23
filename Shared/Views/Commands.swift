@@ -74,7 +74,37 @@ struct GeneralSettings: View {
                 ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
             }
             .onChange(of: store.completedWindowDays) { store.scheduleReload() }
+            HiddenFromTodaySection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Settings: reminders hidden from Today, each with a button to put it back.
+struct HiddenFromTodaySection: View {
+    @Environment(Store.self) private var store
+    @Environment(\.undoManager) private var um
+    #if os(macOS)
+    private static let hint = "None. Right-click a reminder and choose Hide from Today."
+    #else
+    private static let hint = "None. Touch and hold a reminder and choose Hide from Today."
+    #endif
+
+    var body: some View {
+        let rs = store.hiddenFromToday.compactMap { store.snap.reminders[$0] }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        Section("Hidden from Today") {
+            if rs.isEmpty { Text(Self.hint).foregroundStyle(.secondary) }
+            ForEach(rs) { r in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(r.title.isEmpty ? "Untitled" : r.title)
+                        if let l = store.list(r.listID) { Text(l.title).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Spacer()
+                    Button("Show in Today") { store.setHiddenFromToday([r.id], false, undo: um) }
+                }
+            }
+        }
     }
 }
