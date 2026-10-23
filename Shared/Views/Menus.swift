@@ -27,6 +27,7 @@ struct ReminderMenu: View {
                 if store.editingID == a { store.editingID = nil }   // the popover anchors on the row, not the open card
                 store.datePicker = (a, ids)
             }
+            Divider()
             Button("Remove Date", systemImage: "xmark.circle") { store.setDue(ids, { _ in nil }, undo: um) }
         }
         .disabled(locked)
