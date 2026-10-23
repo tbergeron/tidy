@@ -121,8 +121,10 @@ extension DuePreset {
 private enum PanelMetrics {
     #if os(macOS)
     static let row: CGFloat = 28, day: CGFloat = 30, font: CGFloat = 13
+    static let timeGap: CGFloat = 8, pillGap: CGFloat = 5, pillFont: CGFloat = 11, pillPad: CGFloat = 3, pillsFill = false
     #else
     static let row: CGFloat = 44, day: CGFloat = 40, font: CGFloat = 17
+    static let timeGap: CGFloat = 16, pillGap: CGFloat = 8, pillFont: CGFloat = 15, pillPad: CGFloat = 9, pillsFill = true
     #endif
 }
 
@@ -259,7 +261,7 @@ private struct TimeRow: View {
 
     var body: some View {
         let timed = due.map { !Due.isAllDay($0) } ?? false
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PanelMetrics.timeGap) {
             HStack(spacing: 8) {
                 Image(systemName: "clock").foregroundStyle(.secondary).frame(width: 18)
                 if timed {
@@ -278,16 +280,18 @@ private struct TimeRow: View {
                 }
             }
             .frame(height: 22)
-            HStack(spacing: 5) {
+            HStack(spacing: PanelMetrics.pillGap) {
                 ForEach(Self.quickHours, id: \.self) { h in
                     let selected = timed && (due.flatMap { Due.date($0, clock: clock) }.map {
                         clock.cal.component(.hour, from: $0) == h && clock.cal.component(.minute, from: $0) == 0
                     } ?? false)
                     Button { setTime(h) } label: {
-                        Text(label(h)).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                        Text(label(h)).font(.system(size: PanelMetrics.pillFont, weight: .medium)).monospacedDigit()
                             .lineLimit(1).fixedSize()
-                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .padding(.horizontal, 7).padding(.vertical, PanelMetrics.pillPad)
+                            .frame(maxWidth: PanelMetrics.pillsFill ? .infinity : nil)   // iOS: the pills share the row
                             .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
+                            .contentShape(Capsule())
                             .foregroundStyle(selected ? .white : .primary)
                     }
                     .buttonStyle(.plain)
