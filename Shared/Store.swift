@@ -68,6 +68,7 @@ final class Store {
             UserDefaults.standard.set(Array(hiddenLists), forKey: "hiddenLists")
             Platform.sharedDefaults?.set(Array(hiddenLists), forKey: "hiddenLists")
             rebuildIndex()
+            Platform.todayChanged(shown.filter(inToday))   // the widget follows at once
             if case .list(let id) = destination, hiddenLists.contains(id) { destination = .today }
         }
     }
