@@ -69,7 +69,7 @@ targets:
         UISupportedInterfaceOrientations~iphone: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         CFBundleURLTypes:
-          - CFBundleURLName: com.tidyreminders.ios
+          - CFBundleURLName: com.brainpad.tidy
             CFBundleURLSchemes: [tidy]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.tidyreminders.items
@@ -81,7 +81,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Tidy
-        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.brainpad.tidy
         SWIFT_OBJC_BRIDGING_HEADER: Shared/Bridge/TTRBridge.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -107,7 +107,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.ios.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.brainpad.tidy.widget
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: NO
