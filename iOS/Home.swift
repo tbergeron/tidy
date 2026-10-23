@@ -120,8 +120,8 @@ struct Home: View {
                     .labelStyle(.titleAndIcon)
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) { NewReminderButton() }
         }
-        .overlay(alignment: .bottomTrailing) { NewReminderButton() }
         .sheet(isPresented: $showSettings) { SettingsScreen() }
     }
 
@@ -135,6 +135,7 @@ struct ListRow: View {
     let list: RList
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
+    @Environment(\.editMode) private var editMode
 
     var body: some View {
         NavigationLink(value: Destination.list(list.id)) {
@@ -152,9 +153,9 @@ struct ListRow: View {
             }
             .badge(store.count(.list(list.id)) ?? 0)
         }
-        .dropDestination(for: DragItems.self) { items, _ in   // iPad: drag reminders onto a list
+        .reminderDrop(enabled: editMode?.wrappedValue.isEditing != true) { ids in   // iPad: drag reminders onto a list
             guard !list.readOnly else { return false }
-            store.move(items.flatMap(\.reminderIDs), toList: list.id, undo: um)
+            store.move(ids, toList: list.id, undo: um)
             return true
         }
         .swipeActions(edge: .trailing) {
@@ -175,19 +176,26 @@ struct ListRow: View {
     }
 }
 
-/// Things' floating "+": a new reminder in the current view (Liquid Glass, accent tinted).
+/// "+" for a new reminder in the current view: the accent-tinted glass button at the end of the bottom toolbar.
 struct NewReminderButton: View {
     @Environment(Store.self) private var store
 
     var body: some View {
-        Button { store.startCompose() } label: {
-            Image(systemName: "plus").font(.title2.weight(.semibold)).foregroundStyle(.white)
-                .frame(width: 58, height: 58)
+        Button { store.startCompose() } label: { Label("New Reminder", systemImage: "plus") }
+            .buttonStyle(.glassProminent)
+            .disabled(!store.canCreate)
+    }
+}
+
+extension View {
+    /// A drop target for dragged reminders, off while reordering: on iOS a List's reorder drag is itself a drop,
+    /// and a row's drop target takes it, so the move never reaches `onMove`.
+    @ViewBuilder func reminderDrop(enabled: Bool, _ action: @escaping ([String]) -> Bool) -> some View {
+        if enabled {
+            dropDestination(for: DragItems.self) { items, _ in action(items.flatMap(\.reminderIDs)) }
+        } else {
+            self
         }
-        .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
-        .disabled(!store.canCreate)
-        .accessibilityLabel("New Reminder")
-        .padding(.trailing, 20).padding(.bottom, 74)
     }
 }
 

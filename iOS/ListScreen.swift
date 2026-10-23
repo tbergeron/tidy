@@ -57,9 +57,12 @@ struct ListScreen: View {
                         ViewOptions(destination: destination)
                     } label: { Label("More", systemImage: "ellipsis") }
                 }
+                // iOS 26+ bottom bar: search field, then "+".
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) { NewReminderButton() }
             }
         }
-        .overlay(alignment: .bottomTrailing) { if !editMode.isEditing { NewReminderButton() } }
         .overlay(alignment: .bottom) { UndoToast(text: $toast) }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { note in
             // iOS has no ⌘Z: offer Undo for the actions that remove or move things out of view.

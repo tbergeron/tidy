@@ -93,17 +93,17 @@ struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     private let clock = Clock.current
 
+    /// Rows that fit under the header. No "+N more" line: the header's count already says how many there are.
     private var capacity: Int {
         switch family {
-        case .systemSmall: 3
-        case .systemLarge: 11
+        case .systemLarge: 12
         default: 4
         }
     }
 
     var body: some View {
-        let shown = Array(entry.items.prefix(entry.items.count > capacity ? capacity - 1 : capacity))
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 5 : 6) {
+        let shown = Array(entry.items.prefix(capacity))
+        VStack(alignment: .leading, spacing: 5) {
             header
             if !entry.access {
                 Spacer(minLength: 0)
@@ -116,11 +116,6 @@ struct TodayWidgetView: View {
                 Spacer(minLength: 0)
             } else {
                 ForEach(shown) { row($0) }
-                if entry.items.count > shown.count {
-                    Text("+\(entry.items.count - shown.count) more")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .padding(.leading, family == .systemSmall ? 0 : 28)
-                }
                 Spacer(minLength: 0)
             }
         }
