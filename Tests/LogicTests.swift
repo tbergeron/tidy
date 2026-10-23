@@ -288,6 +288,8 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
 @Suite struct DuePresetTests {
     @Test func presetTimes() {
         #expect(DuePreset.todayMorning.date(clock) == at(21, 9))
+        #expect(DuePreset.thisMorning.date(clock) == at(21, 9))
+        #expect(DuePreset.thisAfternoon.date(clock) == at(21, 13))
         #expect(DuePreset.thisEvening.date(clock) == at(21, 18))
         #expect(DuePreset.tomorrowMorning.date(clock) == at(22, 9))
         #expect(DuePreset.inAWeek.date(clock) == at(28, 9))
@@ -328,7 +330,7 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         ("Call mom tomorrow", 22, 9, 0, "Call mom"),
         ("Call mom tomorrow at 5pm", 22, 17, 0, "Call mom"),
         ("Call mom tomorrow evening", 22, 18, 0, "Call mom"),
-        ("Gym this afternoon", 21, 15, 0, "Gym"),
+        ("Gym this afternoon", 21, 13, 0, "Gym"),
         ("Pay rent next week", 28, 9, 0, "Pay rent"),
         ("Buy gift friday", 23, 9, 0, "Buy gift"),
         ("Dentist on Monday at 3:30pm", 26, 15, 30, "Dentist"),

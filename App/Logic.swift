@@ -84,11 +84,13 @@ enum Due {
 
 /// Quick times for the reminder context menu's Due submenu.
 enum DuePreset: CaseIterable, Sendable {
-    case todayMorning, thisEvening, tomorrowMorning, inAWeek
+    case todayMorning, thisMorning, thisAfternoon, thisEvening, tomorrowMorning, inAWeek
 
     func date(_ clock: Clock) -> Date {
         let (days, hour) = switch self {
         case .todayMorning: (0, 9)
+        case .thisMorning: (0, 9)
+        case .thisAfternoon: (0, 13)   // same times as "this morning/afternoon" typed in a title
         case .thisEvening: (0, 18)
         case .tomorrowMorning: (1, 9)
         case .inAWeek: (7, 9)
@@ -100,6 +102,8 @@ enum DuePreset: CaseIterable, Sendable {
     var name: String {
         switch self {
         case .todayMorning: "Today"
+        case .thisMorning: "This Morning"
+        case .thisAfternoon: "This Afternoon"
         case .thisEvening: "This Evening"
         case .tomorrowMorning: "Tomorrow"
         case .inAWeek: "Next Week"
@@ -111,7 +115,7 @@ enum DuePreset: CaseIterable, Sendable {
         let d = date(clock), tz = clock.cal.timeZone
         let time = d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: tz))
         switch self {
-        case .todayMorning, .thisEvening: return time
+        case .todayMorning, .thisMorning, .thisAfternoon, .thisEvening: return time
         case .tomorrowMorning: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated)) + " " + time
         case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).month(.abbreviated).day()) + ", " + time
         }

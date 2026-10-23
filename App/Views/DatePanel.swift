@@ -71,14 +71,18 @@ extension DuePreset {
     var symbol: String {
         switch self {
         case .todayMorning: "sun.max.fill"
+        case .thisMorning: "sunrise.fill"
+        case .thisAfternoon: "sun.haze.fill"
         case .thisEvening: "moon.fill"
-        case .tomorrowMorning: "sunrise.fill"
+        case .tomorrowMorning: "arrow.right.circle.fill"
         case .inAWeek: "calendar.badge.clock"
         }
     }
     var tint: Color {
         switch self {
         case .todayMorning: .yellow
+        case .thisMorning: .orange
+        case .thisAfternoon: .yellow
         case .thisEvening: .indigo
         case .tomorrowMorning: .orange
         case .inAWeek: .teal

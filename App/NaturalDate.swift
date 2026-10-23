@@ -2,7 +2,7 @@ import Foundation
 
 /// Finds dates, times and repeats written in a reminder title ("Do dishes tonight", "Pay rent every month on the 1st",
 /// "Call mom tomorrow at 5pm") and turns them into a due date + recurrence. Deterministic and English-only.
-/// Day-level phrases land at 9:00 (tonight 21:00, this evening 18:00, this afternoon 15:00); "today" alone is all-day.
+/// Day-level phrases land at 9:00 (tonight 21:00, this evening 18:00, this afternoon 13:00); "today" alone is all-day.
 enum NaturalDate {
     struct Detection: Equatable {
         var ranges: [NSRange]          // in the original title (UTF-16), for highlighting
@@ -143,7 +143,7 @@ private struct Parser {
         }
         if let m = find(#"(?:every|each)\s+(morning|afternoon|evening|night)"#) {
             recurrence = Recurrence(frequency: .daily)
-            recurrenceTime = ["morning": (9, 0), "afternoon": (15, 0), "evening": (18, 0), "night": (21, 0)][group(m, 1) ?? ""]
+            recurrenceTime = ["morning": (9, 0), "afternoon": (13, 0), "evening": (18, 0), "night": (21, 0)][group(m, 1) ?? ""]
             return
         }
         let names = (NaturalDate.weekdayNames + NaturalDate.weekdayAbbrev).map(\.pattern).joined(separator: "|")
@@ -235,7 +235,7 @@ private struct Parser {
     }
 
     func partOfDay(_ s: String?) -> (Int, Int)? {
-        ["morning": (9, 0), "afternoon": (15, 0), "evening": (18, 0), "night": (21, 0)][s ?? ""]
+        ["morning": (9, 0), "afternoon": (13, 0), "evening": (18, 0), "night": (21, 0)][s ?? ""]
     }
 
     // MARK: Absolute dates
