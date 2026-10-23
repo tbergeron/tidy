@@ -91,7 +91,7 @@ struct TodayProvider: TimelineProvider {
         }
         var colors: [String: Color] = [:]
         for cal in store.calendars(for: .reminder) { colors[cal.calendarIdentifier.uppercased()] = Color(cgColor: cal.cgColor) }
-        let shared = UserDefaults(suiteName: "group.com.brainpad.tidy")
+        let shared = (Bundle.main.object(forInfoDictionaryKey: "TidyAppGroup") as? String).flatMap(UserDefaults.init(suiteName:))
         let hiddenLists = Set(shared?.stringArray(forKey: "hiddenLists") ?? [])
         let hiddenFromSchedule = Set(shared?.stringArray(forKey: "hiddenFromToday") ?? [])
         let items = rems.compactMap(Reminder.init).filter {
@@ -125,6 +125,12 @@ struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     private let clock = Clock.current
 
+    #if os(macOS)
+    private static let background = Color(nsColor: .windowBackgroundColor)
+    #else
+    private static let background = Color(uiColor: .systemBackground)
+    #endif
+
     /// Rows that fit under the header. No "+N more" line: the header's count already says how many there are.
     private var capacity: Int {
         switch family {
@@ -151,7 +157,7 @@ struct TodayWidgetView: View {
                 Spacer(minLength: 0)
             }
         }
-        .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
+        .containerBackground(for: .widget) { Self.background }
         .widgetURL(URL(string: "tidy://\(entry.view.rawValue)"))
     }
 

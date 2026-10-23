@@ -1,9 +1,9 @@
+import WidgetKit
 #if os(macOS)
 import AppKit
 #else
 import UIKit
 import UserNotifications
-import WidgetKit
 #endif
 
 /// The few things Store and the shared views need from AppKit / UIKit.
@@ -24,11 +24,7 @@ import WidgetKit
         if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
     static let privacySettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!
-    static func widgetsChanged(_ items: [Reminder]) {}
-    static let sharedDefaults: UserDefaults? = nil
     #else
-    /// Settings the widget needs too (hidden lists, hidden from Today).
-    static let sharedDefaults = UserDefaults(suiteName: "group.com.brainpad.tidy")
     static let didBecomeActive = UIApplication.didBecomeActiveNotification
     static let didWake = (center: NotificationCenter.default, name: UIApplication.willEnterForegroundNotification)
     static var undoManager: UndoManager? {
@@ -52,6 +48,12 @@ import WidgetKit
     }
     static let privacySettings = URL(string: UIApplication.openSettingsURLString)!
 
+    #endif
+
+    /// Settings the widgets need too (hidden lists, hidden from the schedule), in the App Group named in Info.plist
+    /// (iOS "group.com.brainpad.tidy", macOS "<team>.com.brainpad.tidy").
+    static let sharedDefaults = (Bundle.main.object(forInfoDictionaryKey: "TidyAppGroup") as? String).flatMap(UserDefaults.init(suiteName:))
+
     /// The Today and Scheduled widgets reload only when what they show changed.
     private static var lastItems: Int?
     static func widgetsChanged(_ items: [Reminder]) {
@@ -60,5 +62,4 @@ import WidgetKit
         lastItems = key
         WidgetCenter.shared.reloadAllTimelines()
     }
-    #endif
 }

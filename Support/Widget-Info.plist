@@ -27,5 +27,7 @@
 	</dict>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Tidy shows and edits your Apple Reminders.</string>
+	<key>TidyAppGroup</key>
+	<string>group.com.brainpad.tidy</string>
 </dict>
 </plist>

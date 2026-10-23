@@ -11,7 +11,7 @@ struct TidyApp: App {
             RootView()
                 .environment(store)
                 .onAppear { store.start() }
-                .onOpenURL(perform: open)
+                .onOpenURL { store.open($0) }
         }
         .commands { AppCommands(store: store) }   // iPad keyboard menu
         .onChange(of: phase) { _, p in
@@ -25,15 +25,6 @@ struct TidyApp: App {
         }
     }
 
-    /// Widget taps: tidy://today or tidy://scheduled, plus /<reminder id> to open that reminder.
-    private func open(_ url: URL) {
-        guard url.scheme == "tidy" else { return }
-        store.destination = url.host() == "scheduled" ? .scheduled : .today
-        store.openRequested += 1
-        if let id = url.pathComponents.dropFirst().first, store.snap.reminders[id] != nil {
-            store.editingID = id
-        }
-    }
 }
 
 struct RootView: View {

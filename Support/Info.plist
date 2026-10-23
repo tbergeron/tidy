@@ -18,12 +18,25 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.tidyreminders.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tidy</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Tidy shows and edits your Apple Reminders.</string>
+	<key>TidyAppGroup</key>
+	<string>$(TeamIdentifierPrefix)com.brainpad.tidy</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

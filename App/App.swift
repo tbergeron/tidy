@@ -10,6 +10,7 @@ struct TidyApp: App {
             RootView()
                 .environment(store)
                 .onAppear { delegate.store = store; store.start() }
+                .onOpenURL { store.open($0) }   // widget taps
         }
         .commands { AppCommands(store: store) }
 

@@ -200,6 +200,14 @@ final class Store {
         if auth == .fullAccess { await reload() }
     }
 
+    /// Widget taps: tidy://today or tidy://scheduled, plus /<reminder id> to open that reminder.
+    func open(_ url: URL) {
+        guard url.scheme == "tidy" else { return }
+        destination = url.host() == "scheduled" ? .scheduled : .today
+        openRequested += 1
+        if let id = url.pathComponents.dropFirst().first, snap.reminders[id] != nil { editingID = id }
+    }
+
     /// Pull to refresh: ask EventKit to sync, then reload.
     func refresh() async {
         await backend.refreshSources()

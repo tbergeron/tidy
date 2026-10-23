@@ -30,10 +30,17 @@ targets:
           - UTTypeIdentifier: com.tidyreminders.items
             UTTypeConformsTo: [public.data]
             UTTypeDescription: Reminders items
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tidyreminders.app
+            CFBundleURLSchemes: [tidy]
+        TidyAppGroup: $(TeamIdentifierPrefix)com.brainpad.tidy
     entitlements:
       path: Support/App.entitlements
       properties:
         com.apple.security.personal-information.calendars: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.brainpad.tidy]
+    dependencies:
+      - target: TidyMacWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app.dev
@@ -48,6 +55,40 @@ targets:
           CODE_SIGN_IDENTITY: $(TIDY_RELEASE_IDENTITY)
           OTHER_CODE_SIGN_FLAGS: $(TIDY_RELEASE_SIGN_FLAGS)
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  TidyMacWidget:
+    type: app-extension
+    platform: macOS
+    sources: [Widget, Shared/Model.swift, Shared/Logic.swift, Shared/EKMap.swift]
+    configFiles:
+      Debug: Config/Tidy.xcconfig
+      Release: Config/Tidy.xcconfig
+    info:
+      path: Support/MacWidget-Info.plist
+      properties:
+        CFBundleDisplayName: Tidy
+        NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        TidyAppGroup: $(TeamIdentifierPrefix)com.brainpad.tidy
+    entitlements:
+      path: Support/MacWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.personal-information.calendars: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.brainpad.tidy]
+    settings:
+      base:
+        PRODUCT_NAME: TidyWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app.dev.widget
+        CODE_SIGN_IDENTITY: $(TIDY_DEBUG_IDENTITY)
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_RESOURCE_ACCESS_CALENDARS: YES
+        SWIFT_VERSION: "5.0"
+      configs:
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.app.widget
+          CODE_SIGN_IDENTITY: $(TIDY_RELEASE_IDENTITY)
+          OTHER_CODE_SIGN_FLAGS: $(TIDY_RELEASE_SIGN_FLAGS)
   TidyiOS:
     type: application
     platform: iOS
@@ -76,6 +117,7 @@ targets:
             UTTypeConformsTo: [public.data]
             UTTypeDescription: Reminders items
         ITSAppUsesNonExemptEncryption: false
+        TidyAppGroup: group.com.brainpad.tidy
     entitlements:
       path: Support/iOS.entitlements
       properties:
@@ -96,7 +138,7 @@ targets:
   TidyWidget:
     type: app-extension
     platform: iOS
-    sources: [iOS-Widget, Shared/Model.swift, Shared/Logic.swift, Shared/EKMap.swift]
+    sources: [Widget, Shared/Model.swift, Shared/Logic.swift, Shared/EKMap.swift]
     configFiles:
       Debug: Config/Tidy.xcconfig
       Release: Config/Tidy.xcconfig
@@ -109,6 +151,7 @@ targets:
         NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        TidyAppGroup: group.com.brainpad.tidy
     entitlements:
       path: Support/Widget.entitlements
       properties:
