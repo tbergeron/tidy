@@ -524,3 +524,26 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(t.detection == nil && draft.due == nil)
     }
 }
+
+/// Dragging lists in the sidebar: the visible order after a move is exactly the dragged order.
+@MainActor @Suite struct SidebarOrderTests {
+    @Test(arguments: [(3, 0), (5, 0), (0, 6), (2, 1), (1, 4)])
+    func moveKeepsDraggedOrder(from: Int, to: Int) {
+        let s = Store()
+        let saved = s.sidebarOrder
+        defer { s.sidebarOrder = saved }
+        s.sidebarOrder = []
+        var snap = Snapshot()
+        let titles = ["Amazon", "Things To Do", "Super C", "Walmart", "Blobette", "Reminders"]
+        snap.lists = titles.enumerated().map { i, t in
+            RList(id: "L\(i)", title: t, color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)
+        }
+        snap.accounts = [Account(id: "A", title: "A", listOrder: ["L5", "L1", "L4", "L3", "L0", "L2"])]
+        s.snap = snap
+        let before = s.sidebarAccounts[0].entries.map(\.id)
+        var expected = before
+        expected.move(fromOffsets: [from], toOffset: to)
+        s.reorder(before, from: [from], to: to, in: &s.sidebarOrder)
+        #expect(s.sidebarAccounts[0].entries.map(\.id) == expected)
+    }
+}

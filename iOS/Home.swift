@@ -19,7 +19,10 @@ struct MainView: View {
             }
         }
         .overlay(alignment: .bottom) { BannerView().padding(.bottom, 60) }
-        .onAppear { if sizeClass == .regular { selected = store.destination } }
+        .onAppear {   // the app opens on Today (on iPhone, pushed over Home)
+            store.destination = .today
+            selected = .today
+        }
         .onChange(of: selected) { _, d in if let d { store.destination = d } }
         .onChange(of: store.destination) { _, d in if selected != nil || sizeClass == .regular { selected = d } }
         .onChange(of: store.openToday) { selected = .today }
@@ -46,6 +49,7 @@ struct Home: View {
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
     @State private var showSettings = false
+    @State private var showReorder = false
 
     static let style: [Destination: (String, Color)] = [
         .today: ("star.fill", .yellow), .scheduled: ("calendar", .red), .all: ("tray.fill", .gray),
@@ -66,7 +70,6 @@ struct Home: View {
                     }
                     .contextMenu { Button("Hide “\(title)”", systemImage: "eye.slash") { store.hiddenSmartLists.insert(title) } }
                 }
-                .onMove { from, to in store.reorder(smart.map(store.title), from: from, to: to, in: &store.smartOrder) }
             }
 
             if !store.pinnedLists.isEmpty {
@@ -83,7 +86,6 @@ struct Home: View {
                         case .group(let g, let lists):
                             DisclosureGroup(isExpanded: expanded(g.id)) {
                                 ForEach(lists) { ListRow(list: $0) }
-                                    .onMove { from, to in store.reorder(lists.map(\.id), from: from, to: to, in: &store.sidebarOrder) }
                             } label: {
                                 NavigationLink(value: Destination.group(g.id)) {
                                     Label(g.name, systemImage: "folder").fontWeight(.semibold)
@@ -92,7 +94,6 @@ struct Home: View {
                             }
                         }
                     }
-                    .onMove { from, to in store.reorder(entries.map(\.id), from: from, to: to, in: &store.sidebarOrder) }
                 }
             }
 
@@ -114,7 +115,9 @@ struct Home: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
             }
-            ToolbarItem(placement: .topBarTrailing) { EditButton() }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showReorder = true } label: { Label("Reorder", systemImage: "arrow.up.arrow.down") }
+            }
             ToolbarItem(placement: .bottomBar) {
                 Button { store.showNewList = true } label: { Label("New List", systemImage: "plus.circle") }
                     .labelStyle(.titleAndIcon)
@@ -123,6 +126,7 @@ struct Home: View {
             ToolbarItem(placement: .bottomBar) { NewReminderButton() }
         }
         .sheet(isPresented: $showSettings) { SettingsScreen() }
+        .sheet(isPresented: $showReorder) { ReorderSheet() }
     }
 
     private func expanded(_ id: String) -> Binding<Bool> {
@@ -135,7 +139,6 @@ struct ListRow: View {
     let list: RList
     @Environment(Store.self) private var store
     @Environment(\.undoManager) private var um
-    @Environment(\.editMode) private var editMode
 
     var body: some View {
         NavigationLink(value: Destination.list(list.id)) {
@@ -153,9 +156,9 @@ struct ListRow: View {
             }
             .badge(store.count(.list(list.id)) ?? 0)
         }
-        .reminderDrop(enabled: editMode?.wrappedValue.isEditing != true) { ids in   // iPad: drag reminders onto a list
+        .dropDestination(for: DragItems.self) { items, _ in   // iPad: drag reminders onto a list
             guard !list.readOnly else { return false }
-            store.move(ids, toList: list.id, undo: um)
+            store.move(items.flatMap(\.reminderIDs), toList: list.id, undo: um)
             return true
         }
         .swipeActions(edge: .trailing) {
@@ -187,15 +190,52 @@ struct NewReminderButton: View {
     }
 }
 
-extension View {
-    /// A drop target for dragged reminders, off while reordering: on iOS a List's reorder drag is itself a drop,
-    /// and a row's drop target takes it, so the move never reaches `onMove`.
-    @ViewBuilder func reminderDrop(enabled: Bool, _ action: @escaping ([String]) -> Bool) -> some View {
-        if enabled {
-            dropDestination(for: DragItems.self) { items, _ in action(items.flatMap(\.reminderIDs)) }
-        } else {
-            self
+/// Reordering the sidebar, one group of rows at a time. A single-section List: dragging to the top of a section
+/// in Home's multi-section List was reported as a move across sections and scrambled the order.
+struct ReorderSheet: View {
+    @Environment(Store.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var scope = "smart"   // "smart" or an account ID
+
+    var body: some View {
+        @Bindable var store = store
+        NavigationStack {
+            List {
+                if scope == "smart" {
+                    let smart = store.orderedSmart.filter { store.isAvailable($0) && !store.hiddenSmartLists.contains(store.title($0)) }
+                    ForEach(smart, id: \.self) { d in
+                        let (icon, color) = Home.style[d] ?? ("list.bullet", .gray)
+                        Label { Text(store.title(d)) } icon: { Image(systemName: icon).foregroundStyle(color) }
+                    }
+                    .onMove { from, to in store.reorder(smart.map(store.title), from: from, to: to, in: &store.smartOrder) }
+                } else if let acc = store.sidebarAccounts.first(where: { $0.id == scope }) {
+                    let entries = acc.entries.filter { if case .list(let l) = $0 { !(store.bridgeReadable && l.isPinned) } else { true } }
+                    ForEach(entries) { e in
+                        switch e {
+                        case .list(let l): Label { Text(l.title) } icon: { ProgressPie(fraction: store.progress(l.id), color: Color(l.color)) }
+                        case .group(let g, _): Label(g.name, systemImage: "folder").fontWeight(.semibold)
+                        }
+                    }
+                    .onMove { from, to in store.reorder(entries.map(\.id), from: from, to: to, in: &store.sidebarOrder) }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .safeAreaInset(edge: .top) {
+                Picker("Reorder", selection: $scope) {
+                    Text("Smart Lists").tag("smart")
+                    ForEach(store.sidebarAccounts) { a in
+                        Text(store.sidebarAccounts.count > 1 ? a.account.title : "Lists").tag(a.id)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16).padding(.bottom, 8)
+            }
+            .onAppear { if let a = store.sidebarAccounts.first { scope = a.id } }   // lists first; Smart Lists one tap away
+            .navigationTitle("Reorder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "checkmark") { dismiss() } } }
         }
+        .presentationDetents([.medium, .large])
     }
 }
 
