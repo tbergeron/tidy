@@ -2,7 +2,8 @@ import Foundation
 
 /// Finds dates, times and repeats written in a reminder title ("Do dishes tonight", "Pay rent every month on the 1st",
 /// "Call mom tomorrow at 5pm") and turns them into a due date + recurrence. Deterministic and English-only.
-/// Day-level phrases land at 9:00 (tonight 21:00, this evening 18:00, this afternoon 13:00); "today" alone is all-day.
+/// Day-level phrases land at 9:00 (tonight 21:00, this evening 18:00, this afternoon 13:00); "today" alone is all-day;
+/// "now" / "right now" is the current minute.
 enum NaturalDate {
     struct Detection: Equatable {
         var ranges: [NSRange]          // in the original title (UTF-16), for highlighting
@@ -64,6 +65,7 @@ private struct Parser {
     mutating func run() -> NaturalDate.Detection? {
         matchRecurrence()
         matchRelative()
+        matchNow()
         matchAbsolute()
         matchTime()
         guard !taken.isEmpty else { return nil }
@@ -182,6 +184,12 @@ private struct Parser {
     }
 
     // MARK: Relative days
+
+    /// "now" / "right now": due this minute. After matchRelative, so "2 days from now" keeps its meaning.
+    mutating func matchNow() {
+        if day != nil || exact != nil { return }
+        if find(#"(?:right\s+)?now"#) != nil { exact = clock.now }
+    }
 
     mutating func matchRelative() {
         if day != nil || exact != nil { return }

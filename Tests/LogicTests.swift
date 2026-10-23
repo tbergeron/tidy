@@ -325,6 +325,20 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
     private func parse(_ s: String) -> NaturalDate.Detection? { NaturalDate.parse(s, clock: clock) }
     private func due(_ s: String) -> Date? { parse(s)?.due.flatMap { Due.date($0, clock: clock) } }
 
+    @Test(arguments: [("Call mom now", "Call mom"), ("Fix the sink right now", "Fix the sink"), ("Take pills now please", "Take pills please")])
+    func now(text: String, title: String) throws {
+        let d = try #require(parse(text))
+        let c = try #require(d.due)
+        let now = clock.cal.dateComponents([.year, .month, .day, .hour, .minute], from: clock.now)
+        #expect([c.year, c.month, c.day, c.hour, c.minute] == [now.year, now.month, now.day, now.hour, now.minute])
+        #expect(d.cleanedTitle == title)
+    }
+
+    @Test func nowInsideWordsOrFromNowIsNotNow() throws {
+        #expect(parse("Buy snow tires") == nil && parse("Know your rights") == nil)
+        #expect(due("Renew passport 2 days from now") == at(23, 9))
+    }
+
     @Test(arguments: [
         ("Do dishes tonight", 21, 21, 0, "Do dishes"),
         ("Call mom tomorrow", 22, 9, 0, "Call mom"),
