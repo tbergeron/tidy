@@ -99,7 +99,12 @@ struct CardView: View {
                             if isNew { draft.listID = l.id } else { commit(); store.move([draft.id], toList: l.id, undo: um) }   // asks first across accounts
                         }
                     }
-                } label: { Image(systemName: "list.bullet") }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "list.bullet")
+                        if let list { Text(list.title).lineLimit(1) }
+                    }
+                }
                     .menuIndicator(.hidden).fixedSize().help("List")
                 Menu {
                     if isNew {
