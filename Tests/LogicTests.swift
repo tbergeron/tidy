@@ -574,3 +574,19 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         #expect(s.count(.today) == 2)
     }
 }
+
+/// Checkbox clicks show at once, and a second click before the save lands toggles back instead of repeating.
+@MainActor @Suite struct ToggleCompleteTests {
+    @Test func quickClicksAlternate() {
+        let s = Store()
+        var snap = Snapshot()
+        snap.lists = [RList(id: "L", title: "L", color: RGBA(r: 0, g: 0, b: 1), accountID: "A", accountTitle: "A", readOnly: false, immutable: false)]
+        snap.reminders = ["TEST-NOT-IN-REMINDERS": reminder("TEST-NOT-IN-REMINDERS")]   // the write fails: no such reminder
+        s.snap = snap
+        s.toggleComplete(["TEST-NOT-IN-REMINDERS"], undo: nil)
+        #expect(s.snap.reminders["TEST-NOT-IN-REMINDERS"]?.isCompleted == true)
+        s.toggleComplete(["TEST-NOT-IN-REMINDERS"], undo: nil)
+        #expect(s.snap.reminders["TEST-NOT-IN-REMINDERS"]?.isCompleted == false)
+        #expect(!s.justCompleted.contains("TEST-NOT-IN-REMINDERS"))
+    }
+}

@@ -719,9 +719,18 @@ final class Store {
             let keep = targets.map(\.id)
             Task { try? await Task.sleep(for: .seconds(1.5)); justCompleted.subtract(keep) }
         }
+        if !done { justCompleted.subtract(targets.map(\.id)) }   // unchecking shows at once, not after the 1.5 s hold
         let reps = targets.filter(\.isRepeating).map(\.id)
         completing.formUnion(reps)
-        applyEdits(targets.map { ($0.id, ReminderEdit(isCompleted: done)) }, name: done ? "Complete" : "Uncomplete", undo: um)
+        applyEdits(targets.map { ($0.id, ReminderEdit(isCompleted: done)) }, name: done ? "Complete" : "Uncomplete", undo: um,
+                   onFailure: { self.scheduleReload(delay: 0) })
+        // Show the new state now (applyEdits has already captured the old values for undo). Without this, a click
+        // before the save landed read the old state and toggled the same way again — the "dead" checkbox.
+        // The saved reminder replaces this when the write finishes; a failed write reloads from Reminders.
+        for t in targets {
+            snap.reminders[t.id]?.isCompleted = done
+            snap.reminders[t.id]?.completionDate = done ? clock.now : nil
+        }
         if !reps.isEmpty { enqueue { self.completing.subtract(reps) } }
     }
 
