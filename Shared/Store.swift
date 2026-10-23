@@ -1,4 +1,3 @@
-import AppKit
 import EventKit
 import Observation
 
@@ -150,14 +149,14 @@ final class Store {
         observers.append(nc.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.clock = .current; self?.scheduleReload() }
         })
-        observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(nc.addObserver(forName: Platform.didBecomeActive, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.auth == .fullAccess else { return }
                 // Asks EventKit to sync; if anything changed it posts EKEventStoreChanged, which reloads.
                 Task { await self.backend.refreshSources() }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(Platform.didWake.center.addObserver(forName: Platform.didWake.name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.clock = .current; self?.scheduleReload() }
         })
         ticker = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -329,12 +328,7 @@ final class Store {
         }
     }
 
-    private func updateBadge() {
-        let n = badgeCount
-        let label = n > 0 ? "\(n)" : nil
-        let tile = NSApplication.shared.dockTile
-        if tile.badgeLabel != label { tile.badgeLabel = label }
-    }
+    private func updateBadge() { Platform.setBadge(badgeCount) }
 
     /// Ops run one after another so their effects (and undos) apply in order.
     private func enqueue(_ op: @escaping @MainActor () async -> Void) {
@@ -918,7 +912,7 @@ final class Store {
     func flushDraft() {
         guard let d = draft else { return }
         draft = nil
-        createParsed(d.text, listID: d.listID, due: d.due, undo: NSApp.keyWindow?.undoManager)
+        createParsed(d.text, listID: d.listID, due: d.due, undo: Platform.undoManager)
     }
 
     /// Creates from typed text, taking a date/repeat written in it ("Do dishes tonight") out of the title.
@@ -1007,9 +1001,9 @@ final class Store {
     // MARK: Open in Reminders
 
     func openInReminders(reminder id: String) {
-        NSWorkspace.shared.open(URL(string: "x-apple-reminderkit://REMCDReminder/\(id)")!)
+        Platform.open(URL(string: "x-apple-reminderkit://REMCDReminder/\(id)")!)
     }
     func openInReminders(list id: String) {
-        NSWorkspace.shared.open(URL(string: "x-apple-reminderkit://REMCDList/\(id)")!)
+        Platform.open(URL(string: "x-apple-reminderkit://REMCDList/\(id)")!)
     }
 }

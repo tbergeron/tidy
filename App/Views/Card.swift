@@ -19,10 +19,8 @@ struct CardView: View {
     /// The reminder as it was when the card opened; Esc restores it (edits are saved as you go).
     private let original: Reminder
     @State private var discarded = false
-    /// Date/repeat typed in the title ("tonight", "every day"…), applied to the draft; nil when none.
-    @State private var detection: NaturalDate.Detection?
-    @State private var ignoredKey: String?
-    @State private var beforeDetection: (due: DateComponents?, recurrence: Recurrence?)?
+    /// Date/repeat typed in the title ("tonight", "every day"…), applied to the draft.
+    @State private var titleDates = TitleDetection()
 
     init(reminder: Reminder) {
         _base = State(initialValue: reminder)
@@ -50,11 +48,11 @@ struct CardView: View {
                 .disabled(isNew)
                 HighlightField(text: $draft.title, placeholder: "New Reminder",
                                font: .systemFont(ofSize: 15, weight: .semibold),
-                               highlights: detection?.ranges ?? [], focusOnAppear: true,
+                               highlights: titleDates.detection?.ranges ?? [], focusOnAppear: true,
                                onSubmit: { focus = .notes }, onEscape: cancel)
             }
-            if let d = detection {
-                DetectionChip(detection: d, clock: store.clock) { ignoreDetection() }.padding(.leading, 23)
+            if let d = titleDates.detection {
+                DetectionChip(detection: d, clock: store.clock) { titleDates.ignore(&draft) }.padding(.leading, 23)
             }
             TextField("Notes", text: Binding(get: { draft.notes ?? "" }, set: { draft.notes = $0 }), axis: .vertical)
                 .textFieldStyle(.plain)
@@ -137,7 +135,7 @@ struct CardView: View {
             }
         }
         .onExitCommand(perform: cancel)
-        .onChange(of: draft.title) { _, t in updateDetection(t) }
+        .onChange(of: draft.title) { titleDates.update(&draft, original: original, isNew: isNew, clock: store.clock) }
         .task(id: draft.title + "\u{0}" + (draft.notes ?? "")) {
             guard !isNew else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -216,8 +214,7 @@ struct CardView: View {
     /// Completion stays as is (it's its own action, undoable with ⌘Z; a repeating one has already advanced).
     private func cancel() {
         if isNew { discarded = true; store.composing = nil; return }
-        detection = nil
-        beforeDetection = nil
+        titleDates.reset()
         var restore = original
         restore.isCompleted = draft.isCompleted
         restore.completionDate = draft.completionDate
@@ -237,11 +234,7 @@ struct CardView: View {
     }
 
     /// What gets saved: the draft, with the detected date words taken out of the title.
-    private var outgoing: Reminder {
-        var o = draft
-        if let d = detection, !d.cleanedTitle.isEmpty { o.title = d.cleanedTitle }
-        return o
-    }
+    private var outgoing: Reminder { titleDates.outgoing(draft) }
 
     private func commit() {
         guard !isNew, !locked, store.snap.reminders[base.id] != nil else { return }
@@ -253,104 +246,5 @@ struct CardView: View {
         }
         base = out   // the field keeps the typed words; the saved title is clean
     }
-
-    /// Parse the title as it's typed; apply what's found, and put back the previous values when it's gone.
-    /// Only after the user changes the title, so opening "Watch tonight show" doesn't reschedule it.
-    private func updateDetection(_ title: String) {
-        guard isNew || title != original.title else { detection = nil; beforeDetection = nil; return }
-        var d = NaturalDate.parse(title, clock: store.clock)
-        if d?.key == ignoredKey { d = nil }
-        let changed = d?.key != detection?.key || d?.due != detection?.due || d?.recurrence != detection?.recurrence
-        if changed {
-            if detection == nil, d != nil { beforeDetection = (draft.due, draft.recurrence) }
-            if let d {
-                if let due = d.due { draft.due = due }
-                draft.recurrence = d.recurrence ?? beforeDetection?.recurrence
-            } else if let b = beforeDetection {
-                draft.due = b.due
-                draft.recurrence = b.recurrence
-                beforeDetection = nil
-            }
-        }
-        detection = d
-    }
-
-    private func ignoreDetection() {
-        guard let d = detection else { return }
-        ignoredKey = d.key
-        if let b = beforeDetection { draft.due = b.due; draft.recurrence = b.recurrence }
-        beforeDetection = nil
-        detection = nil
-    }
 }
 
-/// Summary chips for what's set (read-only for bridge-only data until M3).
-private struct Chips: View {
-    let reminder: Reminder
-    @Environment(Store.self) private var store
-
-    var body: some View {
-        let r = reminder, x = r.extras
-        let items: [String] = [
-            RecurrenceMap.describe(r.recurrence, hourly: x?.hourly == true, due: r.due, clock: store.clock).map { "Repeats " + $0.prefix(1).lowercased() + $0.dropFirst() },
-            (x?.earlyAlerts ?? []).first.map { earlyText($0) },
-            x?.urgent == true ? "Urgent" : nil,
-            r.alarms.compactMap(\.location).first.map { ($0.leaving ? "Leaving: " : "Arriving: ") + $0.title },
-        ].compactMap { $0 }
-        if r.due != nil || !items.isEmpty || !(x?.tags.isEmpty ?? true) || !(x?.urls.isEmpty ?? true) || !(x?.images.isEmpty ?? true) {
-            FlowRow {
-                ForEach(x?.tags ?? [], id: \.self) { Text("#" + $0).chip() }
-                if let due = r.due {
-                    Text(Display.duePill(due, clock: store.clock).text).chip().help(Display.dueFull(due, clock: store.clock))
-                }
-                ForEach(items, id: \.self) { Text($0).chip() }
-                ForEach(x?.urls ?? [], id: \.self) { u in
-                    Link(destination: u) { Label(u.host() ?? u.absoluteString, systemImage: "link").chip() }
-                }
-                ForEach(Array((x?.images ?? []).enumerated()), id: \.offset) { _, img in
-                    Button { store.openInReminders(reminder: r.id) } label: {
-                        Label("\(img.width)×\(img.height)", systemImage: "photo").chip()
-                    }.buttonStyle(.plain).help("Images open in Reminders")
-                }
-            }
-        }
-    }
-
-    private func earlyText(_ a: EarlyAlert) -> String {
-        let units = ["minute", "hour", "day", "week", "month"]
-        let n = abs(a.count), u = units.indices.contains(a.unit) ? units[a.unit] : "?"
-        return "Early: \(n) \(u)\(n == 1 ? "" : "s") before"
-    }
-}
-
-private extension View {
-    func chip() -> some View {
-        font(.caption).padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Capsule().fill(.secondary.opacity(0.12)))
-            .foregroundStyle(.secondary)
-    }
-}
-
-/// Minimal wrapping row for chips.
-private struct FlowRow: Layout {
-    var spacing: CGFloat = 6
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x + size.width > width, x > 0 { x = 0; y += line + spacing; line = 0 }
-            x += size.width + spacing; line = max(line, size.height)
-        }
-        return CGSize(width: width == .infinity ? x : width, height: y + line)
-    }
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += line + spacing; line = 0 }
-            s.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
-            x += size.width + spacing; line = max(line, size.height)
-        }
-    }
-}

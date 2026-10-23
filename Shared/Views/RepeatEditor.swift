@@ -118,7 +118,9 @@ struct RepeatEditor: View {
             }
         }
         .padding(20)
+        #if os(macOS)
         .frame(width: 420)
+        #endif
     }
 
     // MARK: Sections

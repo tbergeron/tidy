@@ -489,3 +489,38 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
         s.search = ""
     }
 }
+
+/// Typing a date in a card title sets the draft; deleting the words or ✕ puts back what was there.
+@Suite struct TitleDetectionTests {
+    @Test func appliesThenRestores() {
+        var t = TitleDetection()
+        let original = reminder("R")
+        var draft = original
+        draft.title = "Gym tomorrow"
+        t.update(&draft, original: original, isNew: false, clock: clock)
+        #expect(draft.due?.day == 22 && t.outgoing(draft).title == "Gym")
+        draft.title = "Gym"
+        t.update(&draft, original: original, isNew: false, clock: clock)
+        #expect(draft.due == nil && t.detection == nil)
+    }
+
+    @Test func ignoreKeepsWordsAndPutsDateBack() {
+        var t = TitleDetection()
+        var draft = reminder("R")
+        draft.title = "Call tonight"
+        t.update(&draft, original: reminder("R"), isNew: true, clock: clock)
+        #expect(draft.due != nil)
+        t.ignore(&draft)
+        #expect(draft.due == nil && t.outgoing(draft).title == "Call tonight")
+        t.update(&draft, original: reminder("R"), isNew: true, clock: clock)   // same words stay ignored
+        #expect(t.detection == nil)
+    }
+
+    @Test func untouchedTitleIsNotParsed() {
+        var t = TitleDetection()
+        var r = reminder("R"); r.title = "Watch tonight show"
+        var draft = r
+        t.update(&draft, original: r, isNew: false, clock: clock)
+        #expect(t.detection == nil && draft.due == nil)
+    }
+}

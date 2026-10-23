@@ -98,34 +98,6 @@ struct HighlightField: NSViewRepresentable {
     }
 }
 
-/// The chip under a title showing what was detected, with ✕ to ignore it.
-struct DetectionChip: View {
-    let detection: NaturalDate.Detection
-    let clock: Clock
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
-            Text(text).lineLimit(1)
-            if detection.hourly {
-                Text("· hourly repeats need Reminders").foregroundStyle(.orange).lineLimit(1)
-            }
-            Button(action: dismiss) { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.tertiary).help("Ignore — keep the words in the title")
-        }
-        .font(.caption)
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-    }
-
-    private var text: String {
-        [detection.due.map { Display.duePill($0, clock: clock).text },
-         RecurrenceMap.describe(detection.recurrence, due: detection.due, clock: clock).map { "Repeats " + $0.prefix(1).lowercased() + $0.dropFirst() }]
-            .compactMap { $0 }.joined(separator: " · ")
-    }
-}
-
 extension Notification.Name { static let tidyFocusSearch = Notification.Name("tidyFocusSearch") }
 
 /// Native search field (fixed width in the toolbar; ⌘F focuses it, Esc clears it).

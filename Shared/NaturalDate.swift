@@ -321,3 +321,48 @@ private struct Parser {
         return s.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters.subtracting(CharacterSet(charactersIn: "?!.)\"'"))))
     }
 }
+
+/// Date/repeat typed in a card's title ("tonight", "every day"…), applied to the draft as it's typed and put back
+/// when the words go away. Shared by the Mac card and the iOS editor.
+struct TitleDetection {
+    private(set) var detection: NaturalDate.Detection?
+    private var ignoredKey: String?
+    private var before: (due: DateComponents?, recurrence: Recurrence?)?
+
+    /// Only after the user changes the title, so opening "Watch tonight show" doesn't reschedule it.
+    mutating func update(_ draft: inout Reminder, original: Reminder, isNew: Bool, clock: Clock) {
+        guard isNew || draft.title != original.title else { reset(); return }
+        var d = NaturalDate.parse(draft.title, clock: clock)
+        if d?.key == ignoredKey { d = nil }
+        let changed = d?.key != detection?.key || d?.due != detection?.due || d?.recurrence != detection?.recurrence
+        if changed {
+            if detection == nil, d != nil { before = (draft.due, draft.recurrence) }
+            if let d {
+                if let due = d.due { draft.due = due }
+                draft.recurrence = d.recurrence ?? before?.recurrence
+            } else if let b = before {
+                draft.due = b.due
+                draft.recurrence = b.recurrence
+                before = nil
+            }
+        }
+        detection = d
+    }
+
+    /// ✕ on the chip: keep the words in the title, put back what they had set.
+    mutating func ignore(_ draft: inout Reminder) {
+        guard let d = detection else { return }
+        ignoredKey = d.key
+        if let b = before { draft.due = b.due; draft.recurrence = b.recurrence }
+        reset()
+    }
+
+    mutating func reset() { detection = nil; before = nil }
+
+    /// What gets saved: the draft with the detected date words taken out of the title.
+    func outgoing(_ draft: Reminder) -> Reminder {
+        var o = draft
+        if let d = detection, !d.cleanedTitle.isEmpty { o.title = d.cleanedTitle }
+        return o
+    }
+}

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The date picker used by the card and the context menu: presets on the left, month grid + time on the right.
-/// Its size never changes while open (a growing popover gets re-placed by AppKit and jumps across the screen).
-/// Edits `due` only; callers write once when the popover closes.
+/// The date picker used by the card and the context menu: presets on the left, month grid + time on the right
+/// (on iOS stacked: presets, then the grid). On macOS its size never changes while open (a growing popover gets
+/// re-placed by AppKit and jumps across the screen). Edits `due` only; callers write once when it closes.
 struct DatePanel: View {
     @Binding var due: DateComponents?
     let clock: Clock
@@ -18,7 +18,53 @@ struct DatePanel: View {
     }
 
     var body: some View {
+        #if os(macOS)
         HStack(alignment: .top, spacing: 0) {
+            presets
+            .padding(6)
+            .frame(width: 268)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                grid
+                TimeRow(due: $due, clock: clock)
+                HStack {
+                    Spacer()
+                    Button("Done", action: close).keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(12)
+            .frame(width: 272)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .focusEffectDisabled()   // no focus ring on Today when the popover opens
+        #else
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                presets
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 22).fill(.background.secondary))
+                VStack(alignment: .leading, spacing: 14) {
+                    grid
+                    TimeRow(due: $due, clock: clock)
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 22).fill(.background.secondary))
+            }
+            .padding(.horizontal, 16)
+        }
+        #endif
+    }
+
+    private var grid: some View {
+        MonthGridPicker(selection: due.flatMap { Due.day($0, clock: clock) }, month: $month,
+                        clock: clock, marked: store.dueDays) { day in
+            due = Due.moving(due, toDay: day, clock: clock)
+        }
+    }
+
+    private var presets: some View {
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(DuePreset.allCases, id: \.self) { p in
                     PanelRow(icon: p.symbol, tint: p.tint, title: p.name, detail: p.detail(clock),
@@ -33,33 +79,14 @@ struct DatePanel: View {
                 }
                 .disabled(due == nil)
                 .opacity(due == nil ? 0.4 : 1)
+                #if os(macOS)
                 Spacer(minLength: 0)
                 Text(due.map { Display.duePill($0, clock: clock).text } ?? "No date")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(due == nil ? .tertiary : .secondary)
                     .padding(.horizontal, 8).padding(.bottom, 4)
+                #endif
             }
-            .padding(6)
-            .frame(width: 268)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 12) {
-                MonthGridPicker(selection: due.flatMap { Due.day($0, clock: clock) }, month: $month,
-                                clock: clock, marked: store.dueDays) { day in
-                    due = Due.moving(due, toDay: day, clock: clock)
-                }
-                TimeRow(due: $due, clock: clock)
-                HStack {
-                    Spacer()
-                    Button("Done", action: close).keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(12)
-            .frame(width: 272)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .focusEffectDisabled()   // no focus ring on Today when the popover opens
     }
 
     private func preset(_ p: DuePreset) -> DateComponents {
@@ -90,6 +117,15 @@ extension DuePreset {
     }
 }
 
+/// Touch targets are bigger on iOS.
+private enum PanelMetrics {
+    #if os(macOS)
+    static let row: CGFloat = 28, day: CGFloat = 30, font: CGFloat = 13
+    #else
+    static let row: CGFloat = 44, day: CGFloat = 40, font: CGFloat = 17
+    #endif
+}
+
 /// One menu-like row: icon, title, trailing detail, hover highlight.
 private struct PanelRow: View {
     let icon: String
@@ -112,9 +148,9 @@ private struct PanelRow: View {
                 if let detail { Text(detail).foregroundStyle(.secondary).monospacedDigit().lineLimit(1).fixedSize() }
                 if checked { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor) }
             }
-            .font(.system(size: 13))
+            .font(.system(size: PanelMetrics.font))
             .padding(.horizontal, 8)
-            .frame(height: 28)
+            .frame(height: PanelMetrics.row)
             .background(RoundedRectangle(cornerRadius: 6).fill(hover ? Color.primary.opacity(0.08) : .clear))
             .contentShape(.rect)
         }
@@ -191,12 +227,12 @@ private struct DayCell: View {
         let past = day < clock.today
         Button(action: action) {
             Text(day.formatted(.dateTime.day()))
-                .font(.system(size: 12, weight: isToday || selected ? .semibold : .regular))
+                .font(.system(size: PanelMetrics.font - 1, weight: isToday || selected ? .semibold : .regular))
                 .monospacedDigit()
                 .foregroundStyle(selected ? AnyShapeStyle(.white)
                                  : isToday ? AnyShapeStyle(Color.accentColor)
                                  : !inMonth || past ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
-                .frame(width: 30, height: 30)
+                .frame(width: PanelMetrics.day, height: PanelMetrics.day)
                 .background {
                     if selected { Circle().fill(Color.accentColor) }
                     else if isToday { Circle().strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1) }
@@ -228,7 +264,9 @@ private struct TimeRow: View {
                 Image(systemName: "clock").foregroundStyle(.secondary).frame(width: 18)
                 if timed {
                     DatePicker("", selection: time, displayedComponents: .hourAndMinute)
+                        #if os(macOS)
                         .datePickerStyle(.field)
+                        #endif
                         .labelsHidden()
                         .fixedSize()
                     Spacer()

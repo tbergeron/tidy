@@ -10,7 +10,7 @@ struct DiagnosticsView: View {
             Section("Private features (ReminderKit)") {
                 Toggle("Enabled", isOn: $store.bridgeEnabled)
                 LabeledContent("Status", value: store.bridgeReadable ? "Reading" : store.snap.bridge.loaded ? "Loaded, reads failing" : "Off")
-                LabeledContent("macOS", value: ProcessInfo.processInfo.operatingSystemVersionString)
+                LabeledContent("System", value: ProcessInfo.processInfo.operatingSystemVersionString)
                 ForEach(store.snap.bridge.report, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
             }
             Section("Accounts") {
@@ -25,12 +25,9 @@ struct DiagnosticsView: View {
             Section("Selected reminder") {
                 if let id = store.selection.first, let r = store.snap.reminders[id] {
                     Text(dump(r)).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(dump(r), forType: .string)
-                    }
+                    Button("Copy") { Platform.copy(dump(r)) }
                 } else {
-                    Text("Select a reminder in the main window.").foregroundStyle(.secondary)
+                    Text("Select a reminder first.").foregroundStyle(.secondary)
                 }
             }
         }

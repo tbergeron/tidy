@@ -136,33 +136,6 @@ struct ListRow: View {
     private var progress: Double { store.progress(list.id) }
 }
 
-/// Things-style project pie.
-struct ProgressPie: View {
-    let fraction: Double
-    let color: Color
-
-    var body: some View {
-        ZStack {
-            Circle().strokeBorder(color, lineWidth: 1.5)
-            PieSlice(fraction: fraction).fill(color).padding(3)
-        }
-        .frame(width: 14, height: 14)
-    }
-}
-
-struct PieSlice: Shape {
-    var fraction: Double
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        guard fraction > 0 else { return p }
-        let c = CGPoint(x: rect.midX, y: rect.midY)
-        p.move(to: c)
-        p.addArc(center: c, radius: rect.width / 2, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(fraction, 1)), clockwise: false)
-        p.closeSubpath()
-        return p
-    }
-}
-
 /// A row's `dropDestination` registers twice: on the List's table (which highlights the row and runs the action)
 /// and on a view SwiftUI lays over the row's content, which takes the drag there without highlighting.
 /// This unregisters those inner views on ordinary rows (again after scrolling brings in new cells) so the table
@@ -216,6 +189,3 @@ struct ListDropFix: NSViewRepresentable {
     }
 }
 
-extension Color {
-    init(_ c: RGBA) { self.init(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a) }
-}
