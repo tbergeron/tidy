@@ -3,6 +3,7 @@ import AppKit
 #else
 import UIKit
 import UserNotifications
+import WidgetKit
 #endif
 
 /// The few things Store and the shared views need from AppKit / UIKit.
@@ -23,6 +24,7 @@ import UserNotifications
         if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
     static let privacySettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")!
+    static func todayChanged(_ today: [Reminder]) {}
     #else
     static let didBecomeActive = UIApplication.didBecomeActiveNotification
     static let didWake = (center: NotificationCenter.default, name: UIApplication.willEnterForegroundNotification)
@@ -46,5 +48,14 @@ import UserNotifications
         }
     }
     static let privacySettings = URL(string: UIApplication.openSettingsURLString)!
+
+    /// The Today widget reloads only when what it shows changed.
+    private static var lastToday: Int?
+    static func todayChanged(_ today: [Reminder]) {
+        let key = Set(today).hashValue
+        guard key != lastToday else { return }
+        lastToday = key
+        WidgetCenter.shared.reloadAllTimelines()
+    }
     #endif
 }

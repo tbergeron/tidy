@@ -45,6 +45,7 @@ final class Store {
     var listDeleteCount: Int?
     var pendingCrossMove: (ids: [String], listID: String, title: String, message: String)?
     var orphanedDraft: Reminder?           // card text whose reminder was deleted elsewhere
+    var openToday = 0                      // iOS: a widget tap asks the iPhone layout to show Today
     @ObservationIgnored var commitOpenCard: (() -> Void)?
     @ObservationIgnored var cancelOpenCard: (() -> Void)?
 
@@ -170,6 +171,12 @@ final class Store {
         if auth == .fullAccess { await reload() }
     }
 
+    /// Pull to refresh: ask EventKit to sync, then reload.
+    func refresh() async {
+        await backend.refreshSources()
+        await reload()
+    }
+
     func scheduleReload(delay: Double = 0.3) {
         reloadTask?.cancel()
         reloadTask = Task {
@@ -256,6 +263,7 @@ final class Store {
             snap = fresh
             perfLog.notice("reload: \(perfMS(t), privacy: .public); since launch: \(perfMS(self.launched), privacy: .public)")
             loaded = true
+            Platform.todayChanged(shown.filter { Smart.inToday($0, clock) })
             // Every list's sections in the background (viewed list first), so opening a list shows its headers
             // at once; the cache is saved after, so the next launch has them too.
             sectionsTask?.cancel()

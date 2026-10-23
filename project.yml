@@ -2,6 +2,7 @@ name: Tidy
 options:
   deploymentTarget:
     macOS: "27.0"
+    iOS: "27.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -47,6 +48,72 @@ targets:
           CODE_SIGN_IDENTITY: $(TIDY_RELEASE_IDENTITY)
           OTHER_CODE_SIGN_FLAGS: $(TIDY_RELEASE_SIGN_FLAGS)
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  TidyiOS:
+    type: application
+    platform: iOS
+    sources: [Shared, iOS]
+    configFiles:
+      Debug: Config/Tidy.xcconfig
+      Release: Config/Tidy.xcconfig
+    info:
+      path: Support/iOS-Info.plist
+      properties:
+        CFBundleDisplayName: Tidy
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.productivity
+        NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations~iphone: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tidyreminders.ios
+            CFBundleURLSchemes: [tidy]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.tidyreminders.items
+            UTTypeConformsTo: [public.data]
+            UTTypeDescription: Reminders items
+        ITSAppUsesNonExemptEncryption: false
+    dependencies:
+      - target: TidyWidget
+    settings:
+      base:
+        PRODUCT_NAME: Tidy
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.ios
+        SWIFT_OBJC_BRIDGING_HEADER: Shared/Bridge/TTRBridge.h
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+  TidyWidget:
+    type: app-extension
+    platform: iOS
+    sources: [iOS-Widget, Shared/Model.swift, Shared/Logic.swift, Shared/EKMap.swift]
+    configFiles:
+      Debug: Config/Tidy.xcconfig
+      Release: Config/Tidy.xcconfig
+    info:
+      path: Support/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Tidy
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSRemindersFullAccessUsageDescription: "Tidy shows and edits your Apple Reminders."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidyreminders.ios.widget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        SWIFT_VERSION: "5.0"
   Tests:
     type: bundle.unit-test
     platform: macOS
@@ -71,3 +138,7 @@ schemes:
         Tests: [test]
     test:
       targets: [Tests]
+  TidyiOS:
+    build:
+      targets:
+        TidyiOS: all

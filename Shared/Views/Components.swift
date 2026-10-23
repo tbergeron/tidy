@@ -1,6 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension Notification.Name { static let tidyFocusSearch = Notification.Name("tidyFocusSearch") }   // ⌘F
+
 extension UTType { static let ttrItems = UTType(exportedAs: "com.tidyreminders.items") }
 
 /// Drag payload: only IDs, never EventKit objects.

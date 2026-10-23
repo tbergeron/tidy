@@ -361,19 +361,12 @@ struct ListEditor: View {
     @State private var color = RGBA(r: 0, g: 0.48, b: 1)
     @State private var accountID: String?
 
-    /// Reminders' palette.
-    static let palette: [RGBA] = [
-        RGBA(r: 1, g: 0.23, b: 0.19), RGBA(r: 1, g: 0.58, b: 0), RGBA(r: 1, g: 0.8, b: 0), RGBA(r: 0.2, g: 0.78, b: 0.35),
-        RGBA(r: 0.35, g: 0.78, b: 0.98), RGBA(r: 0, g: 0.48, b: 1), RGBA(r: 0.35, g: 0.34, b: 0.84), RGBA(r: 1, g: 0.18, b: 0.33),
-        RGBA(r: 0.69, g: 0.32, b: 0.87), RGBA(r: 0.64, g: 0.52, b: 0.37), RGBA(r: 0.56, g: 0.56, b: 0.58), RGBA(r: 0.85, g: 0.65, b: 0.6),
-    ]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(list == nil ? "New List" : "List Info").font(.headline)
             TextField("Name", text: $title).textFieldStyle(.roundedBorder)
             HStack(spacing: 8) {
-                ForEach(Self.palette, id: \.self) { c in
+                ForEach(RGBA.palette, id: \.self) { c in
                     Circle().fill(Color(c)).frame(width: 22, height: 22)
                         .overlay(Circle().strokeBorder(.primary.opacity(c == color ? 0.8 : 0), lineWidth: 2))
                         .onTapGesture { color = c }

@@ -98,7 +98,6 @@ struct HighlightField: NSViewRepresentable {
     }
 }
 
-extension Notification.Name { static let tidyFocusSearch = Notification.Name("tidyFocusSearch") }
 
 /// Native search field (fixed width in the toolbar; ⌘F focuses it, Esc clears it).
 struct SearchField: NSViewRepresentable {

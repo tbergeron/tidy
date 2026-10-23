@@ -105,6 +105,13 @@ struct Account: Identifiable, Hashable, Sendable, Codable {
 
 struct RGBA: Hashable, Sendable, Codable {
     var r: Double, g: Double, b: Double, a: Double = 1
+
+    /// Reminders' list colors.
+    static let palette: [RGBA] = [
+        RGBA(r: 1, g: 0.23, b: 0.19), RGBA(r: 1, g: 0.58, b: 0), RGBA(r: 1, g: 0.8, b: 0), RGBA(r: 0.2, g: 0.78, b: 0.35),
+        RGBA(r: 0.35, g: 0.78, b: 0.98), RGBA(r: 0, g: 0.48, b: 1), RGBA(r: 0.35, g: 0.34, b: 0.84), RGBA(r: 1, g: 0.18, b: 0.33),
+        RGBA(r: 0.69, g: 0.32, b: 0.87), RGBA(r: 0.64, g: 0.52, b: 0.37), RGBA(r: 0.56, g: 0.56, b: 0.58), RGBA(r: 0.85, g: 0.65, b: 0.6),
+    ]
 }
 
 struct BridgeStatus: Hashable, Sendable, Codable {
