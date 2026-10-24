@@ -32,10 +32,8 @@ struct DatePanel: View {
                 TimeRow(due: $due, clock: clock, showField: false)   // quick times as a bar above the calendar
                 grid
                 TimeRow(due: $due, clock: clock, showPills: false)
-                HStack {
-                    Spacer()
-                    Button("Done", action: close).keyboardShortcut(.defaultAction)
-                }
+                // No Done: clicking outside or Esc closes the popover, which saves.
+                Button("", action: close).keyboardShortcut(.defaultAction).hidden().frame(height: 0)   // Return still closes
             }
             .padding(12)
             .frame(width: 272)
