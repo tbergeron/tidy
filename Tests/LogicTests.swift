@@ -286,19 +286,38 @@ private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.com
 }
 
 @Suite struct DuePresetTests {
-    @Test func presetTimes() {
-        #expect(DuePreset.todayMorning.date(clock) == at(21, 9))
-        #expect(DuePreset.thisMorning.date(clock) == at(21, 9))
-        #expect(DuePreset.thisAfternoon.date(clock) == at(21, 13))
-        #expect(DuePreset.thisEvening.date(clock) == at(21, 18))
-        #expect(DuePreset.tomorrowMorning.date(clock) == at(22, 9))
-        #expect(DuePreset.inAWeek.date(clock) == at(28, 9))
+    private func timed(_ d: Int, _ h: Int, _ m: Int = 0) -> DateComponents { Due.components(at(d, h, m), allDay: false, timeZone: nil, clock: clock) }
+    private func allDay(_ d: Int) -> DateComponents { Due.components(at(d), allDay: true, timeZone: nil, clock: clock) }
+
+    @Test func presetTimes() {   // now: Oct 21, 10:00
+        #expect(DuePreset.today.date(from: nil, clock: clock) == at(21, 9))
+        #expect(DuePreset.thisAfternoon.date(from: nil, clock: clock) == at(21, 13))
+        #expect(DuePreset.thisEvening.date(from: nil, clock: clock) == at(21, 18))
+    }
+
+    @Test func laterToday() {
+        #expect(DuePreset.laterToday.date(from: nil, clock: clock) == at(21, 12))           // no date: now + 2 h
+        #expect(DuePreset.laterToday.date(from: allDay(21), clock: clock) == at(21, 12))     // no time: now + 2 h
+        #expect(DuePreset.laterToday.date(from: timed(21, 15), clock: clock) == at(21, 17))  // its time + 2 h
+        #expect(DuePreset.laterToday.date(from: timed(25, 15), clock: clock) == at(21, 12))  // not today: now + 2 h
+    }
+
+    @Test func tomorrowAndNextWeekKeepTheTime() {
+        #expect(DuePreset.tomorrow.date(from: timed(19, 15, 30), clock: clock) == at(22, 15, 30))
+        #expect(DuePreset.tomorrow.date(from: allDay(21), clock: clock) == at(22, 9))
+        #expect(DuePreset.nextWeek.date(from: timed(21, 18), clock: clock) == at(28, 18))
+        #expect(DuePreset.nextWeek.date(from: nil, clock: clock) == at(28, 9))
+    }
+
+    @Test func pastPartsOfTheDayAreHidden() {
+        #expect(!DuePreset.thisMorning.isAvailable(clock))   // 10:00 is past 9:00
+        #expect(DuePreset.thisAfternoon.isAvailable(clock) && DuePreset.thisEvening.isAvailable(clock))
     }
 
     @Test func detailsShowWhen() {
-        #expect(DuePreset.inAWeek.name == "Next Week")
-        #expect(DuePreset.inAWeek.detail(clock).contains("28"))      // the date it lands on
-        #expect(DuePreset.tomorrowMorning.detail(clock).hasPrefix("Thu"))
+        #expect(DuePreset.nextWeek.name == "Next Week")
+        #expect(DuePreset.nextWeek.detail(from: nil, clock: clock).contains("28"))
+        #expect(DuePreset.tomorrow.detail(from: nil, clock: clock).hasPrefix("Thu"))
     }
 }
 

@@ -87,12 +87,14 @@ struct CardView: View {
                     }
                     .onChange(of: showDate) { _, open in if !open { commit() } }   // one write per popover session
                 repeatMenu
-                Menu {
-                    ForEach(Priority.allCases.reversed(), id: \.self) { p in
-                        Button(p.label) { draft.priority = p.raw; commit() }
-                    }
-                } label: { Image(systemName: "exclamationmark") }
-                    .menuIndicator(.hidden).fixedSize().help("Priority")
+                if store.showPriorities {
+                    Menu {
+                        ForEach(Priority.allCases.reversed(), id: \.self) { p in
+                            Button(p.label) { draft.priority = p.raw; commit() }
+                        }
+                    } label: { Image(systemName: "exclamationmark") }
+                        .menuIndicator(.hidden).fixedSize().help("Priority")
+                }
                 Menu {
                     ForEach(store.orderedListIDs.compactMap(store.list).filter { !$0.readOnly }) { l in
                         Button(l.title) {

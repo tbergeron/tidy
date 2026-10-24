@@ -1,5 +1,6 @@
 import EventKit
 import Observation
+import WidgetKit
 
 /// UI-facing model. Holds the latest Snapshot from Backend; every write goes Backend → fresh values → here.
 /// No optimistic layer except hiding pending deletes and keeping just-completed rows visible briefly.
@@ -121,6 +122,15 @@ final class Store {
         order = moved + order.filter { !moved.contains($0) }
     }
 
+    /// Off: no priority marks, menus or pickers anywhere (the reminders keep their priority).
+    var showPriorities = UserDefaults.standard.object(forKey: "showPriorities") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(showPriorities, forKey: "showPriorities")
+            Platform.sharedDefaults?.set(showPriorities, forKey: "showPriorities")
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
     var hiddenSmartLists = Set(UserDefaults.standard.stringArray(forKey: "hiddenSmartLists") ?? []) {
         didSet { UserDefaults.standard.set(Array(hiddenSmartLists), forKey: "hiddenSmartLists") }
     }
@@ -170,6 +180,7 @@ final class Store {
         guard !started else { return }
         started = true
         Platform.sharedDefaults?.set(Array(hiddenLists), forKey: "hiddenLists")   // for the widget
+        Platform.sharedDefaults?.set(showPriorities, forKey: "showPriorities")
         Platform.sharedDefaults?.set(Array(hiddenFromSchedule), forKey: "hiddenFromToday")
         perfLog.debug("start(): \(perfMS(self.launched), privacy: .public) after Store init")
         let nc = NotificationCenter.default

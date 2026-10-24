@@ -98,7 +98,7 @@ private struct Row: View {
             .disabled(list?.readOnly == true)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    if Priority(raw: r.priority) != .none {
+                    if store.showPriorities && Priority(raw: r.priority) != .none {
                         Text(Priority(raw: r.priority).marks).fontWeight(.bold).foregroundStyle(.orange)
                     }
                     Text(r.title.isEmpty ? "New Reminder" : r.title)
@@ -225,14 +225,14 @@ private struct SelectionActions: View {
             .disabled(ids.isEmpty)
         Spacer()
         Menu {
-            ForEach(DuePreset.allCases, id: \.self) { p in
+            ForEach(DuePreset.allCases.filter { $0.isAvailable(store.clock) }, id: \.self) { p in
                 Button(p.name, systemImage: p.symbol) {
-                    let d = p.date(store.clock)
-                    store.setDue(ids, { Due.components(d, allDay: false, timeZone: $0.due?.timeZone, clock: store.clock) }, undo: um)
+                    store.setDue(ids, { p.components(from: $0.due, clock: store.clock) }, undo: um)
                 }
             }
             Divider()
-            Button("Pick a Date…", systemImage: "calendar.badge.plus") { if let a = ids.first { store.datePicker = (a, ids) } }
+            Button("Custom", systemImage: "calendar.badge.plus") { if let a = ids.first { store.datePicker = (a, ids) } }
+            Divider()
             Button("Remove Date", systemImage: "xmark.circle") { store.setDue(ids, { _ in nil }, undo: um) }
         } label: { Label("Date", systemImage: "calendar") }
             .disabled(ids.isEmpty)

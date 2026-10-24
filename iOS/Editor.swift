@@ -70,9 +70,11 @@ struct ReminderEditor: View {
                     }
                     .tint(.primary)
                     repeatRow
-                    Picker(selection: Binding(get: { Priority(raw: draft.priority) }, set: { draft.priority = $0.raw; commit() })) {
-                        ForEach(Priority.allCases.reversed(), id: \.self) { Text($0.label).tag($0) }
-                    } label: { Label("Priority", systemImage: "exclamationmark") }
+                    if store.showPriorities {
+                        Picker(selection: Binding(get: { Priority(raw: draft.priority) }, set: { draft.priority = $0.raw; commit() })) {
+                            ForEach(Priority.allCases.reversed(), id: \.self) { Text($0.label).tag($0) }
+                        } label: { Label("Priority", systemImage: "exclamationmark") }
+                    }
                     Picker(selection: Binding(get: { draft.listID }, set: { setList($0) })) {
                         ForEach(store.orderedListIDs.compactMap(store.list).filter { !$0.readOnly }) { l in
                             Text(l.title).tag(l.id)

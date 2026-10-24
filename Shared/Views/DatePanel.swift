@@ -9,12 +9,14 @@ struct DatePanel: View {
     let close: () -> Void
     @Environment(Store.self) private var store
     @State private var month: Date
+    private let initial: DateComponents?
 
     init(due: Binding<DateComponents?>, clock: Clock, close: @escaping () -> Void) {
         _due = due
         self.clock = clock
         self.close = close
         _month = State(initialValue: due.wrappedValue.flatMap { Due.date($0, clock: clock) } ?? clock.now)
+        initial = due.wrappedValue
     }
 
     var body: some View {
@@ -67,8 +69,8 @@ struct DatePanel: View {
 
     private var presets: some View {
             VStack(alignment: .leading, spacing: 1) {
-                ForEach(DuePreset.allCases, id: \.self) { p in
-                    PanelRow(icon: p.symbol, tint: p.tint, title: p.name, detail: p.detail(clock),
+                ForEach(DuePreset.allCases.filter { $0.isAvailable(clock) }, id: \.self) { p in
+                    PanelRow(icon: p.symbol, tint: p.tint, title: p.name, detail: p.detail(from: initial, clock: clock),
                              checked: Due.same(due, preset(p), clock: clock)) {
                         due = preset(p)
                         close()
@@ -90,30 +92,31 @@ struct DatePanel: View {
             }
     }
 
-    private func preset(_ p: DuePreset) -> DateComponents {
-        Due.components(p.date(clock), allDay: false, timeZone: due?.timeZone, clock: clock)
-    }
+    /// Relative to the date the picker opened with, so "Later Today" means two hours after the reminder's time.
+    private func preset(_ p: DuePreset) -> DateComponents { p.components(from: initial, clock: clock) }
 }
 
 extension DuePreset {
     var symbol: String {
         switch self {
-        case .todayMorning: "sun.max.fill"
+        case .today: "sun.max.fill"
+        case .laterToday: "clock.arrow.circlepath"
         case .thisMorning: "sunrise.fill"
         case .thisAfternoon: "sun.haze.fill"
         case .thisEvening: "moon.fill"
-        case .tomorrowMorning: "arrow.right.circle.fill"
-        case .inAWeek: "calendar.badge.clock"
+        case .tomorrow: "arrow.right.circle.fill"
+        case .nextWeek: "calendar.badge.clock"
         }
     }
     var tint: Color {
         switch self {
-        case .todayMorning: .yellow
+        case .today: .yellow
+        case .laterToday: .blue
         case .thisMorning: .orange
         case .thisAfternoon: .yellow
         case .thisEvening: .indigo
-        case .tomorrowMorning: .orange
-        case .inAWeek: .teal
+        case .tomorrow: .orange
+        case .nextWeek: .teal
         }
     }
 }

@@ -17,11 +17,13 @@ struct AppCommands: Commands {
         CommandMenu("Reminder") {
             Button("Show Details") { store.editingID = store.selection.first }.keyboardShortcut("i").disabled(store.selection.count != 1)
             Button("Mark as Completed") { store.toggleComplete(ids, undo: um) }.keyboardShortcut("c", modifiers: [.command, .shift]).disabled(none)
-            Menu("Priority") {
-                ForEach(Priority.allCases.reversed(), id: \.self) { p in
-                    Button(p.label) { store.setPriority(ids, p, undo: um) }
-                }
-            }.disabled(none)
+            if store.showPriorities {
+                Menu("Priority") {
+                    ForEach(Priority.allCases.reversed(), id: \.self) { p in
+                        Button(p.label) { store.setPriority(ids, p, undo: um) }
+                    }
+                }.disabled(none)
+            }
             Button("Move to…") { store.showMoveSheet = true }.keyboardShortcut("m", modifiers: [.command, .shift]).disabled(none)
             Divider()
             Button("Open in Reminders") { if let id = ids.first { store.openInReminders(reminder: id) } }.disabled(store.selection.count != 1)
@@ -70,6 +72,7 @@ struct GeneralSettings: View {
                 Text("Off").tag(Store.BadgeMode.off)
             }
             Toggle("Group Today by time of day", isOn: $store.groupByTime)
+            Toggle("Show priorities", isOn: $store.showPriorities)
             Picker("Load completed reminders from the last", selection: $store.completedWindowDays) {
                 ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
             }

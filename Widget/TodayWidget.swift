@@ -48,6 +48,7 @@ struct TodayEntry: TimelineEntry {
     var view: WidgetView
     var items: [Reminder]
     var colors: [String: Color] = [:]   // list ID → list color, for the circles
+    var showPriorities = true
     var access = true
 }
 
@@ -97,7 +98,8 @@ struct TodayProvider: TimelineProvider {
         let items = rems.compactMap(Reminder.init).filter {
             view.includes($0, clock: clock) && !hiddenLists.contains($0.listID) && !hiddenFromSchedule.contains($0.id)
         }
-        return TodayEntry(date: .now, view: view, items: Sorting.smart(items, clock: clock), colors: colors)
+        return TodayEntry(date: .now, view: view, items: Sorting.smart(items, clock: clock), colors: colors,
+                          showPriorities: shared?.object(forKey: "showPriorities") as? Bool ?? true)
     }
 }
 
@@ -187,7 +189,7 @@ struct TodayWidgetView: View {
             }
             Link(destination: URL(string: "\(Self.scheme)://\(entry.view.rawValue)/\(r.id)")!) {
                 HStack(spacing: 6) {
-                    if Priority(raw: r.priority) != .none {
+                    if entry.showPriorities && Priority(raw: r.priority) != .none {
                         Text(Priority(raw: r.priority).marks).fontWeight(.bold).foregroundStyle(.orange)
                     }
                     Text(r.title).lineLimit(1)

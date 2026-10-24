@@ -82,43 +82,66 @@ enum Due {
     }
 }
 
-/// Quick times for the reminder context menu's Due submenu.
+/// Quick dates for the Due menu and the date picker, worked out from the reminder's current date (`due`).
 enum DuePreset: CaseIterable, Sendable {
-    case todayMorning, thisMorning, thisAfternoon, thisEvening, tomorrowMorning, inAWeek
+    case today, laterToday, thisMorning, thisAfternoon, thisEvening, tomorrow, nextWeek
 
-    func date(_ clock: Clock) -> Date {
-        let (days, hour) = switch self {
-        case .todayMorning: (0, 9)
-        case .thisMorning: (0, 9)
-        case .thisAfternoon: (0, 13)   // same times as "this morning/afternoon" typed in a title
-        case .thisEvening: (0, 18)
-        case .tomorrowMorning: (1, 9)
-        case .inAWeek: (7, 9)
+    /// This Morning / Afternoon / Evening disappear once their time has passed.
+    func isAvailable(_ clock: Clock) -> Bool {
+        switch self {
+        case .thisMorning: clock.now < at(0, (9, 0), clock)
+        case .thisAfternoon: clock.now < at(0, (13, 0), clock)
+        case .thisEvening: clock.now < at(0, (18, 0), clock)
+        default: true
         }
+    }
+
+    func date(from due: DateComponents?, clock: Clock) -> Date {
+        let timed = due.flatMap { Due.isAllDay($0) ? nil : Due.date($0, clock: clock) }
+        let time = timed.map { (clock.cal.component(.hour, from: $0), clock.cal.component(.minute, from: $0)) }
+        switch self {
+        case .today: return at(0, (9, 0), clock)
+        case .laterToday:
+            // Two hours after its time when it's due today; otherwise two hours from now.
+            if let timed, clock.cal.isDate(timed, inSameDayAs: clock.now) { return timed.addingTimeInterval(2 * 3600) }
+            return clock.now.addingTimeInterval(2 * 3600)
+        case .thisMorning: return at(0, (9, 0), clock)
+        case .thisAfternoon: return at(0, (13, 0), clock)
+        case .thisEvening: return at(0, (18, 0), clock)
+        case .tomorrow: return at(1, time ?? (9, 0), clock)     // same time tomorrow, else 9:00
+        case .nextWeek: return at(7, time ?? (9, 0), clock)     // same time in 7 days, else 9:00
+        }
+    }
+
+    func components(from due: DateComponents?, clock: Clock) -> DateComponents {
+        Due.components(date(from: due, clock: clock), allDay: false, timeZone: due?.timeZone, clock: clock)
+    }
+
+    /// Today + n days at a wall-clock time (DST-safe).
+    private func at(_ days: Int, _ t: (Int, Int), _ clock: Clock) -> Date {
         let day = clock.cal.date(byAdding: .day, value: days, to: clock.today)!
-        return clock.cal.date(bySettingHour: hour, minute: 0, second: 0, of: day)!   // wall clock: DST-safe
+        return clock.cal.date(bySettingHour: t.0, minute: t.1, second: 0, of: day)!
     }
 
     var name: String {
         switch self {
-        case .todayMorning: "Today"
+        case .today: "Today"
+        case .laterToday: "Later Today"
         case .thisMorning: "This Morning"
         case .thisAfternoon: "This Afternoon"
         case .thisEvening: "This Evening"
-        case .tomorrowMorning: "Tomorrow"
-        case .inAWeek: "Next Week"
+        case .tomorrow: "Tomorrow"
+        case .nextWeek: "Next Week"
         }
     }
 
-    /// Trailing detail in the date panel: "9:00 AM", "Thu 9:00 AM", "Oct 28, 9:00 AM".
-    func detail(_ clock: Clock) -> String {
-        let d = date(clock), tz = clock.cal.timeZone
+    /// Trailing detail in the date panel: "11:00 AM", "Thu 3:30 PM", "Oct 28, 9:00 AM".
+    func detail(from due: DateComponents?, clock: Clock) -> String {
+        let d = date(from: due, clock: clock), tz = clock.cal.timeZone
         let time = d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: tz))
-        switch self {
-        case .todayMorning, .thisMorning, .thisAfternoon, .thisEvening: return time
-        case .tomorrowMorning: return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated)) + " " + time
-        case .inAWeek: return d.formatted(Date.FormatStyle(timeZone: tz).month(.abbreviated).day()) + ", " + time
-        }
+        if clock.cal.isDate(d, inSameDayAs: clock.now) { return time }
+        if self == .nextWeek { return d.formatted(Date.FormatStyle(timeZone: tz).month(.abbreviated).day()) + ", " + time }
+        return d.formatted(Date.FormatStyle(timeZone: tz).weekday(.abbreviated)) + " " + time
     }
 }
 

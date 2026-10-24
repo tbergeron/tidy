@@ -15,14 +15,13 @@ struct ReminderMenu: View {
         let locked = ids.allSatisfy(store.locked)
         let rs = ids.compactMap { store.snap.reminders[$0] }
         Menu("Due", systemImage: "calendar") {
-            ForEach(DuePreset.allCases, id: \.self) { p in
-                Button(p.name, systemImage: p.symbol) {
-                    let d = p.date(store.clock)
-                    store.setDue(ids, { Due.components(d, allDay: false, timeZone: $0.due?.timeZone, clock: store.clock) }, undo: um)
+            ForEach(DuePreset.allCases.filter { $0.isAvailable(store.clock) }, id: \.self) { p in
+                Button(p.name, systemImage: p.symbol) {   // each reminder from its own date (Later Today, same time…)
+                    store.setDue(ids, { p.components(from: $0.due, clock: store.clock) }, undo: um)
                 }
             }
             Divider()
-            Button("Pick a Date…", systemImage: "calendar.badge.plus") {
+            Button("Custom", systemImage: "calendar.badge.plus") {
                 guard let a = anchor ?? ids.first else { return }
                 if store.editingID == a { store.editingID = nil }   // the popover anchors on the row, not the open card
                 store.datePicker = (a, ids)
@@ -31,13 +30,15 @@ struct ReminderMenu: View {
             Button("Remove Date", systemImage: "xmark.circle") { store.setDue(ids, { _ in nil }, undo: um) }
         }
         .disabled(locked)
-        Menu("Priority", systemImage: "exclamationmark") {
-            ForEach(Priority.allCases.reversed(), id: \.self) { p in
-                Toggle(p.label, isOn: Binding(get: { one.map { Priority(raw: $0.priority) == p } ?? false },
-                                              set: { _ in store.setPriority(ids, p, undo: um) }))
+        if store.showPriorities {
+            Menu("Priority", systemImage: "exclamationmark") {
+                ForEach(Priority.allCases.reversed(), id: \.self) { p in
+                    Toggle(p.label, isOn: Binding(get: { one.map { Priority(raw: $0.priority) == p } ?? false },
+                                                  set: { _ in store.setPriority(ids, p, undo: um) }))
+                }
             }
+            .disabled(locked)
         }
-        .disabled(locked)
         Button("Move to…", systemImage: "folder") { store.selection = Set(ids); store.showMoveSheet = true }.disabled(locked)
         if store.bridgeReadable {
             let urgent = !rs.isEmpty && rs.allSatisfy { $0.extras?.urgent == true }

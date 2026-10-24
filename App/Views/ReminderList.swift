@@ -244,7 +244,7 @@ struct ReminderRow: View {
                 store.toggleComplete([r.id], undo: um)
             }
             .disabled(list?.readOnly == true)
-            if Priority(raw: r.priority) != .none {
+            if store.showPriorities && Priority(raw: r.priority) != .none {
                 Text(Priority(raw: r.priority).marks).font(.system(size: 13, weight: .bold)).foregroundStyle(.orange)
             }
             VStack(alignment: .leading, spacing: 1) {

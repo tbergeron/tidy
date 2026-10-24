@@ -255,6 +255,7 @@ struct SettingsScreen: View {
                         Text("Off").tag(Store.BadgeMode.off)
                     }
                     Toggle("Group Today by time of day", isOn: $store.groupByTime)
+                    Toggle("Show priorities", isOn: $store.showPriorities)
                     Picker("Completed reminders", selection: $store.completedWindowDays) {
                         ForEach([7, 30, 90, 365], id: \.self) { Text("Last \($0) days").tag($0) }
                     }
