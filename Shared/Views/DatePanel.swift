@@ -29,8 +29,9 @@ struct DatePanel: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
+                TimeRow(due: $due, clock: clock, showField: false)   // quick times as a bar above the calendar
                 grid
-                TimeRow(due: $due, clock: clock)
+                TimeRow(due: $due, clock: clock, showPills: false)
                 HStack {
                     Spacer()
                     Button("Done", action: close).keyboardShortcut(.defaultAction)
@@ -125,7 +126,7 @@ extension DuePreset {
 private enum PanelMetrics {
     #if os(macOS)
     static let row: CGFloat = 28, day: CGFloat = 30, font: CGFloat = 13
-    static let timeGap: CGFloat = 8, pillGap: CGFloat = 5, pillFont: CGFloat = 11, pillPad: CGFloat = 3, pillsFill = false
+    static let timeGap: CGFloat = 8, pillGap: CGFloat = 5, pillFont: CGFloat = 12, pillPad: CGFloat = 5, pillsFill = true
     #else
     static let row: CGFloat = 44, day: CGFloat = 40, font: CGFloat = 17
     static let timeGap: CGFloat = 16, pillGap: CGFloat = 8, pillFont: CGFloat = 15, pillPad: CGFloat = 9, pillsFill = true
@@ -304,7 +305,7 @@ private struct TimeRow: View {
                         Text(label(h)).font(.system(size: PanelMetrics.pillFont, weight: .medium)).monospacedDigit()
                             .lineLimit(1).fixedSize()
                             .padding(.horizontal, 7).padding(.vertical, PanelMetrics.pillPad)
-                            .frame(maxWidth: PanelMetrics.pillsFill ? .infinity : nil)   // iOS: the pills share the row
+                            .frame(maxWidth: PanelMetrics.pillsFill ? .infinity : nil)   // the pills share the row
                             .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.07)))
                             .contentShape(Capsule())
                             .foregroundStyle(selected ? .white : .primary)
